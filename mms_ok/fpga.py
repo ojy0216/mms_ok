@@ -201,7 +201,7 @@ class XEM(ABC):
                 "Turning off the LEDs before closing the device!",
                 logging_level=logging.INFO,
             )
-            self.set_led(led_value=0, verbose=False)
+            self.set_led(led_value=0, led_address=self._led_address)
         self.xem.Close()
         log("Device closed!", logging_level=logging.INFO)
 
