@@ -45,6 +45,6 @@ try:
     import ok
 except ImportError:
     log("Please manually setup FrontPanel SDK!", logging_level=logging.CRITICAL)
-    raise Exception("Import ok failed")
+    raise ImportError("Import ok failed")
 
 from .fpga import XEM7310, XEM7360

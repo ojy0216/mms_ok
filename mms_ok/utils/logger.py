@@ -41,7 +41,7 @@ def log(msg: str, logging_level: int) -> None:
             - logging.CRITICAL
 
     Raises:
-        Exception: If an invalid logging level is provided.
+        ValueError: If an invalid logging level is provided.
 
     Returns:
         None
@@ -53,7 +53,7 @@ def log(msg: str, logging_level: int) -> None:
         logging.ERROR,
         logging.CRITICAL,
     }:
-        raise Exception("Invalid logging level provided!")
+        raise ValueError("Invalid logging level provided!")
 
     if logging_level == logging.DEBUG:
         logging.debug(msg=msg, extra={"prefix": get_caller_info()})

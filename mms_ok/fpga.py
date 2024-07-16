@@ -54,11 +54,11 @@ class XEM(ABC):
             None
 
         Raises:
-            Exception: If the bitstream path is invalid.
+            FileNotFoundError: If the bitstream path is invalid.
         """
         if not os.path.isfile(self._bitstream_path):
             log(f'"{self._bitstream_path}" is invalid!', logging_level=logging.CRITICAL)
-            raise Exception(f"{self._bitstream_path} is an invalid bitstream!")
+            raise FileNotFoundError(f"{self._bitstream_path} is an invalid bitstream!")
 
     def _log_bitstream_info(self) -> None:
         """
@@ -91,12 +91,12 @@ class XEM(ABC):
             None
 
         Raises:
-            Exception: If the device fails to open.
+            ConnectionError: If the device fails to open.
         """
         not_opened = self.xem.OpenBySerial("")
         if not_opened:
             log("Device is not opened!", logging_level=logging.CRITICAL)
-            raise Exception("Device is not opened!")
+            raise ConnectionError("Device is not opened!")
         else:
             log("Device is opened!", logging_level=logging.INFO)
 
@@ -139,7 +139,7 @@ class XEM(ABC):
             None
 
         Raises:
-            Exception: If the bitstream file is not connected to the device or if FrontPanel is not enabled.
+            RuntimeError: If the bitstream file is not connected to the device or if FrontPanel is not enabled.
         """
         error_code = self.xem.ConfigureFPGA(self._bitstream_path)
         if error_code == 0:
@@ -152,13 +152,13 @@ class XEM(ABC):
                 f"Input bitstream file is not connected to the device!",
                 logging_level=logging.CRITICAL,
             )
-            raise Exception(f"Input bitstream file is not connected to the device!")
+            raise RuntimeError(f"Input bitstream file is not connected to the device!")
 
         if self.xem.IsFrontPanelEnabled():
             log("FrontPanel is enabled!", logging_level=logging.INFO)
         else:
             log("FrontPanel is not enabled!", logging_level=logging.CRITICAL)
-            raise Exception("FrontPanel is not enabled!")
+            raise RuntimeError("FrontPanel is not enabled!")
 
     @abstractmethod
     def _check_device_settings(self) -> None:
@@ -220,14 +220,14 @@ class XEM(ABC):
             None
 
         Raises:
-            Exception: If the reset_address is not in the range 0x00 ~ 0x1F.
+            ValueError: If the reset_address is not in the range 0x00 ~ 0x1F.
         """
         if not 0x00 <= reset_address <= 0x1F:
             log(
                 "Invalid reset_address! It should be in 0x00 ~ 0x1F",
                 logging_level=logging.ERROR,
             )
-            raise Exception("Invalid reset_address! It should be in 0x00 ~ 0x1F")
+            raise ValueError("Invalid reset_address! It should be in 0x00 ~ 0x1F")
 
         reset_value, nominal_value = (0, 1) if active_low else (1, 0)
 
@@ -248,7 +248,7 @@ class XEM(ABC):
                 f"LED value must be between 0 and {2**num_leds - 1}",
                 logging_level=logging.ERROR,
             )
-            raise Exception(f"LED value must be between 0 and {2**num_leds - 1}")
+            raise ValueError(f"LED value must be between 0 and {2**num_leds - 1}")
 
         self._led_used = True
         self._led_address = self._led_address or led_address
@@ -271,16 +271,19 @@ class XEM(ABC):
         Returns:
             str: The reordered hexadecimal string.
 
-        Example:
-            Input : "AB_CD_EF_GH"
+        Raises:
+            ValueError: If the length of the input string is not a multiple of 8.
+
+        Examples:
+            Input: "AB_CD_EF_GH"
             Output: "GH_EF_CD_AB"
         """
         if len(hex_str) % 8 != 0:
-            XEM.log(
+            log(
                 f"Hexadecimal string length must be a multiple of 8!",
                 logging_level=logging.ERROR,
             )
-            raise Exception("Hexadecimal string length must be a multiple of 8!")
+            raise ValueError("Hexadecimal string length must be a multiple of 8!")
 
         return "".join(
             [
@@ -308,20 +311,20 @@ class XEM(ABC):
             int: The error code. Returns a negative value if the operation fails.
 
         Raises:
-            Exception: If the endpoint address is invalid or the value/mask is out of range.
+            ValueError: If the endpoint address is invalid or the value/mask is out of range.
         """
         if not 0x00 <= epAddr <= 0x1F:
             log(
                 "Invalid endpoint address! It should be in 0x00 ~ 0x1F",
                 logging_level=logging.ERROR,
             )
-            raise Exception("Invalid endpoint address! It should be in 0x00 ~ 0x1F")
+            raise ValueError("Invalid endpoint address! It should be in 0x00 ~ 0x1F")
         if not 0 <= value < (2**self.wire_width):
             log(
                 f"Value ({value}) can't be represented with wire width ({self.wire_width})!",
                 logging_level=logging.ERROR,
             )
-            raise Exception(
+            raise ValueError(
                 f"Value ({value}) can't be represented with wire width ({self.wire_width})!"
             )
         if mask is None:
@@ -334,7 +337,7 @@ class XEM(ABC):
                     f"Invalid mask (0x{mask:0_X})! It should be in 0x{0:0{hex_str_len}_X} ~ 0x{(2**self.wire_width - 1):0{hex_str_len}_X}",
                     logging_level=logging.ERROR,
                 )
-                raise Exception(
+                raise ValueError(
                     f"Invalid mask (0x{mask:0_X})! It should be in 0x{0:0{hex_str_len}_X} ~ 0x{(2**self.wire_width - 1):0{hex_str_len}_X}"
                 )
         error_code = self.xem.SetWireInValue(epAddr, value, mask)
@@ -392,15 +395,14 @@ class XEM(ABC):
             int: The value of the wire out endpoint.
 
         Raises:
-            Exception: If the endpoint address is invalid.
-
+            ValueError: If the endpoint address is invalid.
         """
         if not 0x20 <= epAddr <= 0x3F:
             log(
                 "Invalid endpoint address! It should be in 0x20 ~ 0x3F",
                 logging_level=logging.ERROR,
             )
-            raise Exception("Invalid endpoint address! It should be in 0x20 ~ 0x3F")
+            raise ValueError("Invalid endpoint address! It should be in 0x20 ~ 0x3F")
         return self.xem.GetWireOutValue(epAddr)
 
     def WriteToPipeIn(
@@ -422,14 +424,14 @@ class XEM(ABC):
             int: The error code. Returns a negative value if the write operation fails.
 
         Raises:
-            Exception: If the endpoint address is invalid or the block size is not a multiple of 16 bytes.
+            ValueError: If the endpoint address is invalid or the block size is not a multiple of 16 bytes.
         """
         if not 0x80 <= epAddr <= 0x9F:
             log(
                 "Invalid endpoint address! It should be in 0x80 ~ 0x9F",
                 logging_level=logging.ERROR,
             )
-            raise Exception("Invalid endpoint address! It should be in 0x80 ~ 0x9F")
+            raise ValueError("Invalid endpoint address! It should be in 0x80 ~ 0x9F")
 
         if isinstance(data, str):
             if reorder_str:
@@ -441,7 +443,7 @@ class XEM(ABC):
             log(
                 "Block size must be a multiple of 16 bytes", logging_level=logging.ERROR
             )
-            raise Exception("Block size must be a multiple of 16 bytes")
+            raise ValueError("Block size must be a multiple of 16 bytes")
 
         error_code = self.xem.WriteToPipeIn(epAddr, data)
         if error_code < 0:
@@ -459,35 +461,37 @@ class XEM(ABC):
         reorder_str: Optional[bool] = True,
     ) -> PipeOutData:
         """
-        Reads data from the specified endpoint address of the FPGA's PipeOut interface.
+        Reads data from the pipe out endpoint.
 
         Args:
-            epAddr (int): The endpoint address to read data from. Should be in the range 0xA0 ~ 0xBF.
-            data (Optional[bytearray]): The data buffer to store the read data. If not provided, a new bytearray will be created with the specified block size.
-            blockSize (Optional[int]): The size of the data block to read. If not provided, the length of the provided data buffer will be used.
-            reorder_str (Optional[bool]): Flag indicating whether to reorder the read data as a hexadecimal string. Default is True.
+            epAddr (int): The endpoint address. Should be in the range 0xA0 ~ 0xBF.
+            data (Optional[bytearray]): The data to be read. If not provided, a bytearray of size `blockSize` will be created.
+            blockSize (Optional[int]): The size of the data block to be read. If `data` is provided, this argument is ignored.
+            reorder_str (Optional[bool]): Whether to reorder the hex string representation of the read data. Default is True.
 
         Returns:
             PipeOutData: An object containing the error code and the read data.
 
         Raises:
-            Exception: If the endpoint address is invalid or if both data and block size are None.
-            Exception: If the data buffer is not a bytearray when only data is provided.
-            Exception: If the block size is not a multiple of 16 bytes.
+            ValueError: If the endpoint address is invalid or the block size is not a multiple of 16 bytes.
+            RuntimeError: If both `data` and `blockSize` are None.
+            TypeError: If `data` is provided but it is not a bytearray.
         """
         if not 0xA0 <= epAddr <= 0xBF:
             log(
                 "Invalid endpoint address! It should be in 0xA0 ~ 0xBF",
                 logging_level=logging.ERROR,
             )
-            raise Exception("Invalid endpoint address! It should be in 0xA0 ~ 0xBF")
+            raise ValueError("Invalid endpoint address! It should be in 0xA0 ~ 0xBF")
 
         if data is None and blockSize is None:
             log(
                 "Both data and block size cannot be None at the same time",
                 logging_level=logging.ERROR,
             )
-            raise Exception("Both data and block size cannot be None at the same time")
+            raise RuntimeError(
+                "Both data and block size cannot be None at the same time"
+            )
         elif blockSize is not None:
             # Only block size is provided
             data = bytearray(blockSize)
@@ -495,7 +499,7 @@ class XEM(ABC):
             # Only data is provided
             if not isinstance(data, bytearray):
                 log('Input "data" must be a bytearray!', logging_level=logging.ERROR)
-                raise Exception('Input "data" must be a bytearray!')
+                raise TypeError('Input "data" must be a bytearray!')
         else:
             # Both data and block size are provided
             if blockSize != len(data):
@@ -508,7 +512,7 @@ class XEM(ABC):
             log(
                 "Block size must be a multiple of 16 bytes", logging_level=logging.ERROR
             )
-            raise Exception("Block size must be a multiple of 16 bytes")
+            raise ValueError("Block size must be a multiple of 16 bytes")
 
         error_code = self.xem.ReadFromPipeOut(epAddr, data)
         if error_code < 0:
@@ -545,15 +549,15 @@ class XEM(ABC):
             int: The error code. Returns a negative value if an error occurs.
 
         Raises:
-            Exception: If the endpoint address is invalid (not in the range 0x80 ~ 0x9F).
-            Exception: If the block size is not a multiple of 16 bytes.
+            ValueError: If the endpoint address is invalid (not in the range 0x80 ~ 0x9F).
+            ValueError: If the block size is not a multiple of 16 bytes.
         """
         if not 0x80 <= epAddr <= 0x9F:
             log(
                 "Invalid endpoint address! It should be in 0x80 ~ 0x9F",
                 logging_level=logging.ERROR,
             )
-            raise Exception("Invalid endpoint address! It should be in 0x80 ~ 0x9F")
+            raise ValueError("Invalid endpoint address! It should be in 0x80 ~ 0x9F")
 
         if isinstance(data, str):
             if reorder_str:
@@ -574,7 +578,7 @@ class XEM(ABC):
             log(
                 "Block size must be a multiple of 16 bytes", logging_level=logging.ERROR
             )
-            raise Exception("Block size must be a multiple of 16 bytes")
+            raise ValueError("Block size must be a multiple of 16 bytes")
 
         error_code = self.xem.WriteToBlockPipeIn(epAddr, blockSize, data)
         if error_code < 0:
@@ -592,35 +596,37 @@ class XEM(ABC):
         reorder_str: Optional[bool] = True,
     ) -> PipeOutData:
         """
-        Reads data from a block pipe out endpoint.
+        Reads data from the block pipe out endpoint.
 
         Args:
             epAddr (int): The endpoint address. Should be in the range 0xA0 ~ 0xBF.
             data (Optional[bytearray]): The data to be read. If not provided, a bytearray of size `blockSize` will be created.
-            blockSize (Optional[int]): The size of the data block. Required if `data` is not provided.
-            reorder_str (Optional[bool]): Whether to reorder the hex string representation of the data. Defaults to True.
+            blockSize (Optional[int]): The size of the data block to be read. If `data` is provided, this argument is ignored.
+            reorder_str (Optional[bool]): Whether to reorder the hex string representation of the read data. Default is True.
 
         Returns:
             PipeOutData: An object containing the error code and the read data.
 
         Raises:
-            Exception: If the endpoint address is invalid or if both `data` and `blockSize` are None.
-            Exception: If `data` is not a bytearray when only `data` is provided.
-            Exception: If the block size is not a multiple of 16 bytes.
+            ValueError: If the endpoint address is invalid or the block size is not a multiple of 16 bytes.
+            RuntimeError: If both `data` and `blockSize` are None.
+            TypeError: If `data` is provided but it is not a bytearray.
         """
         if not 0xA0 <= epAddr <= 0xBF:
             log(
                 "Invalid endpoint address! It should be in 0xA0 ~ 0xBF",
                 logging_level=logging.ERROR,
             )
-            raise Exception("Invalid endpoint address! It should be in 0xA0 ~ 0xBF")
+            raise ValueError("Invalid endpoint address! It should be in 0xA0 ~ 0xBF")
 
         if data is None and blockSize is None:
             log(
                 "Both data and block size cannot be None at the same time",
                 logging_level=logging.ERROR,
             )
-            raise Exception("Both data and block size cannot be None at the same time")
+            raise RuntimeError(
+                "Both data and block size cannot be None at the same time"
+            )
         elif blockSize is not None:
             # Only block size is provided
             data = bytearray(blockSize)
@@ -628,7 +634,7 @@ class XEM(ABC):
             # Only data is provided
             if not isinstance(data, bytearray):
                 log('Input "data" must be a bytearray!', logging_level=logging.ERROR)
-                raise Exception('Input "data" must be a bytearray!')
+                raise TypeError('Input "data" must be a bytearray!')
             blockSize = len(data)
         else:
             # Both data and block size are provided
@@ -642,7 +648,7 @@ class XEM(ABC):
             log(
                 "Block size must be a multiple of 16 bytes", logging_level=logging.ERROR
             )
-            raise Exception("Block size must be a multiple of 16 bytes")
+            raise ValueError("Block size must be a multiple of 16 bytes")
 
         error_code = self.xem.ReadFromBlockPipeOut(epAddr, blockSize, data)
         if error_code < 0:
@@ -671,20 +677,20 @@ class XEM(ABC):
             int: The error code. Returns a negative value if an error occurs.
 
         Raises:
-            Exception: If the endpoint address or bit is invalid.
+            ValueError: If the endpoint address or bit is invalid.
         """
         if not 0x40 <= epAddr <= 0x5F:
             log(
                 "Invalid endpoint address! It should be in 0x40 ~ 0x5F",
                 logging_level=logging.ERROR,
             )
-            raise Exception("Invalid endpoint address! It should be in 0x40 ~ 0x5F")
+            raise ValueError("Invalid endpoint address! It should be in 0x40 ~ 0x5F")
         if not 0 <= bit < self.trigger_width:
             log(
                 f"Invalid bit! It should be in 0 ~ {self.trigger_width - 1}",
                 logging_level=logging.ERROR,
             )
-            raise Exception(
+            raise ValueError(
                 f"Invalid bit! It should be in 0 ~ {self.trigger_width - 1}"
             )
         error_code = self.xem.ActivateTriggerIn(epAddr, bit)
@@ -722,21 +728,21 @@ class XEM(ABC):
             bool: True if the endpoint address is triggered with the given mask, False otherwise.
 
         Raises:
-            Exception: If the endpoint address or mask is invalid.
+            ValueError: If the endpoint address or mask is invalid.
         """
         if not 0x60 <= epAddr <= 0x7F:
             log(
                 "Invalid endpoint address! It should be in 0x60 ~ 0x7F",
                 logging_level=logging.ERROR,
             )
-            raise Exception("Invalid endpoint address! It should be in 0x60 ~ 0x7F")
+            raise ValueError("Invalid endpoint address! It should be in 0x60 ~ 0x7F")
         if not 0 <= mask < (2**self.trigger_width):
             hex_str_len = int(2 * (np.log2(self.wire_width) - 1))
             log(
                 f"Invalid mask (0x{mask:0_X})! It should be in 0x{0:0{hex_str_len}_X} ~ 0x{(2**self.trigger_width - 1):0{hex_str_len}_X}",
                 logging_level=logging.ERROR,
             )
-            raise Exception(
+            raise ValueError(
                 f"Invalid mask (0x{mask:0_X})! It should be in 0x{0:0{hex_str_len}_X} ~ 0x{(2**self.trigger_width - 1):0{hex_str_len}_X}"
             )
         return self.xem.IsTriggered(epAddr, mask)
@@ -754,7 +760,7 @@ class XEM7310(XEM):
             None
 
         Raises:
-            Exception: If the connected FPGA board is not a XEM7310A75/A100.
+            TypeError: If the connected FPGA board is not a XEM7310A75/A100.
         """
         super().__init__(bitstream_path=bitstream_path)
 
@@ -768,7 +774,7 @@ class XEM7310(XEM):
                 "Connected FPGA board is not a XEM7310A75/A100!",
                 logging_level=logging.CRITICAL,
             )
-            raise Exception("Connected FPGA board is not a XEM7310A75/A100!")
+            raise TypeError("Connected FPGA board is not a XEM7310A75/A100!")
 
     def _check_device_settings(self) -> None:
         pass
@@ -782,7 +788,7 @@ class XEM7310(XEM):
             led_address (int, optional): The address of the LED. Defaults to 0x00.
 
         Raises:
-            AssertionError: If the LED value is not between 0 and 255.
+            ValueError: If the LED value is not between 0 and 255.
         """
         # XEM7310 has 8 LEDs
         super().set_led(num_leds=8, led_value=led_value, led_address=led_address)
@@ -801,7 +807,7 @@ class XEM7360(XEM):
                 None
 
             Raises:
-                Exception: If the connected FPGA board is not a XEM7360K160T.
+                TypeError: If the connected FPGA board is not a XEM7360K160T.
             """
             super().__init__(bitstream_path=bitstream_path)
 
@@ -812,7 +818,7 @@ class XEM7360(XEM):
                     "Connected FPGA board is not a XEM7360K160T!",
                     logging_level=logging.CRITICAL,
                 )
-                raise Exception("Connected FPGA board is not a XEM7360K160T!")
+                raise TypeError("Connected FPGA board is not a XEM7360K160T!")
 
     def _check_device_settings(self) -> None:
         """
@@ -881,7 +887,7 @@ class XEM7360(XEM):
             None
 
         Raises:
-            AssertionError: If the LED value is not between 0 and 15.
+            ValueError: If the LED value is not between 0 and 15.
         """
         # XEM7360 has 4 LEDs
         super().set_led(num_leds=4, led_value=led_value, led_address=led_address)
