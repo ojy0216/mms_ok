@@ -50,7 +50,7 @@ class XEM(ABC):
 
         Raises:
             FileNotFoundError: If the bitstream path is invalid.
-            RuntimeError: If the bitstream file extension is not ".bit".
+            ValueError: If the bitstream file extension is not ".bit".
         """
         if not os.path.isfile(self._bitstream_path):
             log(f'"{self._bitstream_path}" is invalid!', logging_level=logging.CRITICAL)
