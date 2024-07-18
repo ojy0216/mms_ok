@@ -44,7 +44,7 @@ class XEM(ABC):
 
         Args:
             None
-        
+
         Returns:
             None
 
@@ -55,10 +55,13 @@ class XEM(ABC):
         if not os.path.isfile(self._bitstream_path):
             log(f'"{self._bitstream_path}" is invalid!', logging_level=logging.CRITICAL)
             raise FileNotFoundError(f"{self._bitstream_path} is an invalid bitstream!")
-        
+
         extension = os.path.splitext(self._bitstream_path)[1]
         if extension != ".bit":
-            log(f"{extension} is not a valid bitstream file extension!", logging_level=logging.CRITICAL)
+            log(
+                f"{extension} is not a valid bitstream file extension!",
+                logging_level=logging.CRITICAL,
+            )
             raise ValueError(f"{extension} is not a valid bitstream file extension!")
 
         log(f"Bitstream file: {self._bitstream_path}", logging_level=logging.INFO)
