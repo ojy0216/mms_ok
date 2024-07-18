@@ -15,18 +15,14 @@ from .utils import PipeOutData, log
 class XEM(ABC):
     def __init__(self, bitstream_path: str) -> None:
         """
-        Initializes an instance of the FPGA class.
+        Initializes the FPGA object.
 
         Args:
             bitstream_path (str): The path to the bitstream file.
 
         Returns:
             None
-
-        Raises:
-            AssertionError: If the provided bitstream_path is invalid.
         """
-
         self._led_used = False
         self._led_address = None
 
@@ -35,7 +31,6 @@ class XEM(ABC):
         self._bitstream_path = os.path.abspath(bitstream_path)
 
         self._validate_bitstream_path()
-        self._log_bitstream_info()
 
         self._connect()
         self._configure()
@@ -45,33 +40,27 @@ class XEM(ABC):
 
     def _validate_bitstream_path(self) -> None:
         """
-        Validates the bitstream path.
+        Validates the bitstream path and checks if it is a valid bitstream file.
 
         Args:
             None
-
+        
         Returns:
             None
 
         Raises:
             FileNotFoundError: If the bitstream path is invalid.
+            RuntimeError: If the bitstream file extension is not ".bit".
         """
         if not os.path.isfile(self._bitstream_path):
             log(f'"{self._bitstream_path}" is invalid!', logging_level=logging.CRITICAL)
             raise FileNotFoundError(f"{self._bitstream_path} is an invalid bitstream!")
+        
+        extension = os.path.splitext(self._bitstream_path)[1]
+        if extension != ".bit":
+            log(f"{extension} is not a valid bitstream file extension!", logging_level=logging.CRITICAL)
+            raise ValueError(f"{extension} is not a valid bitstream file extension!")
 
-    def _log_bitstream_info(self) -> None:
-        """
-        Logs information about the bitstream file.
-
-        This method logs the path and date of the bitstream file.
-
-        Args:
-            None
-
-        Returns:
-            None
-        """
         log(f"Bitstream file: {self._bitstream_path}", logging_level=logging.INFO)
 
         timestamp = os.path.getmtime(self._bitstream_path)
