@@ -221,13 +221,13 @@ class XEM(ABC):
         reset_value, nominal_value = (0, 1) if active_low else (1, 0)
 
         log(f"Reset Start ({reset_time}s)", logging_level=logging.INFO)
-        self.xem.SetWireInValue(reset_address, reset_value)
-        self.xem.UpdateWireIns()
+        self.SetWireInValue(reset_address, reset_value)
+        self.UpdateWireIns()
 
         time.sleep(reset_time)
 
-        self.xem.SetWireInValue(reset_address, nominal_value)
-        self.xem.UpdateWireIns()
+        self.SetWireInValue(reset_address, nominal_value)
+        self.UpdateWireIns()
         log(f"Reset End ({reset_time}s)\n", logging_level=logging.INFO)
 
     @abstractmethod
@@ -246,8 +246,8 @@ class XEM(ABC):
             logging_level=logging.DEBUG,
         )
 
-        self.xem.SetWireInValue(self._led_address, led_value)
-        self.xem.UpdateWireIns()
+        self.SetWireInValue(self._led_address, led_value)
+        self.UpdateWireIns()
 
     @staticmethod
     def reorder_hex_str(hex_str: str) -> str:
