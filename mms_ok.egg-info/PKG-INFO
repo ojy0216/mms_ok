@@ -1,0 +1,9 @@
+Metadata-Version: 2.1
+Name: mms-ok
+Version: 0.1.0
+Summary: Python package for interfacing with Opal Kelly FPGA boards
+Author-email: juyoung.oh@snu.ac.kr
+Classifier: Intended Audience :: Science/Research
+Classifier: Programming Language :: Python :: 3
+Classifier: Topic :: Scientific/Engineering
+Requires-Python: >=3.7
