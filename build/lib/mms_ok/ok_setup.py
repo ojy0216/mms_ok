@@ -17,7 +17,17 @@ def copy_frontpanel_files():
         frontpanel_dir = os.environ.get("okFP_ROOT", None)
 
         if frontpanel_dir is None:
-            log("FrontPanel SDK seems not installed!", level="warning")
+            frontpanel_dir = r"C:/Program Files/Opal Kelly/FrontPanelUSB/"
+
+        if not os.path.exists(frontpanel_dir):
+            log("FrontPanel SDK not found!", level="warning")
+            log(f"Default Directory: {frontpanel_dir}", level="warning")
+            return
+
+        if not os.path.exists(frontpanel_dir):
+            log("FrontPanel SDK not found!", level="warning")
+            log(f"Default Directory: {frontpanel_dir}", level="warning")
+            return
 
         try:
             with open(os.path.join(frontpanel_dir, "ReleaseNotes.txt"), "r") as f:
