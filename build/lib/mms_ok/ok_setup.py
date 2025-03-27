@@ -14,15 +14,7 @@ def copy_frontpanel_files():
         except FileExistsError:
             pass
 
-        frontpanel_dir = os.environ.get("okFP_ROOT", None)
-
-        if frontpanel_dir is None:
-            frontpanel_dir = r"C:/Program Files/Opal Kelly/FrontPanelUSB/"
-
-        if not os.path.exists(frontpanel_dir):
-            log("FrontPanel SDK not found!", level="warning")
-            log(f"Default Directory: {frontpanel_dir}", level="warning")
-            return
+        frontpanel_dir = r"C:\Program Files\Opal Kelly\FrontPanelUSB"
 
         if not os.path.exists(frontpanel_dir):
             log("FrontPanel SDK not found!", level="warning")
