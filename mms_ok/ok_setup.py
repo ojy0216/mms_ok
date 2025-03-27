@@ -12,9 +12,9 @@ def copy_frontpanel_files():
         try:
             os.mkdir(lib_dir)
         except FileExistsError:
-            pass
+            return
 
-        frontpanel_dir = os.environ.get("okFP_ROOT", None)
+        frontpanel_dir = r"C:\Program Files\Opal Kelly\FrontPanelUSB"
 
         if frontpanel_dir is None:
             log("FrontPanel SDK seems not installed!", level="warning")
