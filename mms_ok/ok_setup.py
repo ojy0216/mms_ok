@@ -12,7 +12,7 @@ def copy_frontpanel_files():
         try:
             os.mkdir(lib_dir)
         except FileExistsError:
-            return
+            pass
 
         frontpanel_dir = r"C:\Program Files\Opal Kelly\FrontPanelUSB"
 
