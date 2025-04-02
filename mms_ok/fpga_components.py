@@ -5,7 +5,7 @@ import ok
 from loguru import logger
 
 from .pipeoutdata import PipeOutData
-from .validation import validate_address, validate_wire_value
+from .validation import validate_address, validate_wire_value, validate_block_size
 
 
 class WireOperations:
@@ -429,6 +429,7 @@ class BlockPipeOperations:
         self,
         ep_addr: int,
         data: Union[str, bytearray, np.ndarray],
+        block_size: int = None,
         reorder_str: bool = True,
     ) -> int:
         """
@@ -437,6 +438,7 @@ class BlockPipeOperations:
         Args:
             ep_addr (int): Block pipe endpoint address (0x80 - 0x9F)
             data: Data to write
+            block_size (int): Number of bytes to write to the pipe
             reorder_str (bool): Whether to reorder string data
 
         Returns:
@@ -448,7 +450,11 @@ class BlockPipeOperations:
         validate_address(0x80, 0x9F, ep_addr)
 
         prepared_data = self.pipe_ops._prepare_data(data, reorder_str)
-        block_size = min(len(prepared_data), self.bt_max_blocksize) if self.bt_max_blocksize > 0 else len(prepared_data)
+
+        if block_size is None:
+            block_size = min(len(prepared_data), self.bt_max_blocksize) if self.bt_max_blocksize > 0 else len(prepared_data)
+        else:
+            validate_block_size(block_size, self.bt_max_blocksize)
 
         error_code = self.xem.WriteToBlockPipeIn(ep_addr, block_size, prepared_data)
         if error_code < 0:
@@ -458,7 +464,7 @@ class BlockPipeOperations:
         return error_code
 
     def read_from_block_pipe_out(
-        self, ep_addr: int, data: Union[int, bytearray], reorder_str: bool = True
+        self, ep_addr: int, data: Union[int, bytearray], block_size: int = None, reorder_str: bool = True
     ) -> PipeOutData:
         """
         Read data from a block pipe-out endpoint.
@@ -466,6 +472,7 @@ class BlockPipeOperations:
         Args:
             ep_addr (int): Block pipe endpoint address (0xA0 - 0xBF)
             data: Either a bytearray to use as buffer or an integer specifying buffer size
+            block_size (int): Number of bytes to read from the pipe
             reorder_str (bool): Whether to reorder received string data
 
         Returns:
@@ -478,7 +485,10 @@ class BlockPipeOperations:
 
         buffer = self.pipe_ops._prepare_read_buffer(data)
 
-        block_size = min(len(buffer), self.bt_max_blocksize) if self.bt_max_blocksize > 0 else len(buffer)
+        if block_size is None:
+            block_size = min(len(buffer), self.bt_max_blocksize) if self.bt_max_blocksize > 0 else len(buffer)
+        else:
+            validate_block_size(block_size, self.bt_max_blocksize)
 
         error_code = self.xem.ReadFromBlockPipeOut(ep_addr, block_size, buffer)
         if error_code < 0:

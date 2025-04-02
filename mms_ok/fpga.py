@@ -424,6 +424,7 @@ class XEM(ABC):
         self,
         ep_addr: int,
         data: Union[str, bytearray, np.ndarray],
+        block_size: int = None,
         reorder_str: bool = True,
     ) -> int:
         """
@@ -435,6 +436,7 @@ class XEM(ABC):
         Args:
             ep_addr (int): Block pipe endpoint address
             data (Union[str, bytearray]): Data block to write
+            block_size (int): Number of bytes to write to the pipe
             reorder_str (bool): If True, reorder string data for FPGA (default: True)
 
         Returns:
@@ -444,11 +446,11 @@ class XEM(ABC):
             ValueError: If data format is invalid
         """
         return self.block_pipe_ops.write_to_block_pipe_in(
-            ep_addr, data, reorder_str=reorder_str
+            ep_addr, data, block_size, reorder_str=reorder_str
         )
 
     def ReadFromBlockPipeOut(
-        self, ep_addr: int, data: Union[int, bytearray], reorder_str: bool = True
+        self, ep_addr: int, data: Union[int, bytearray], block_size: int = None, reorder_str: bool = True
     ) -> PipeOutData:
         """
         Read data from a block pipe-out endpoint.
@@ -459,6 +461,7 @@ class XEM(ABC):
         Args:
             ep_addr (int): Block pipe endpoint address
             data (Union[int, bytearray]): Buffer to store read data
+            block_size (int): Number of bytes to read from the pipe
             reorder_str (bool): If True, reorder received string data (default: True)
 
         Returns:
@@ -467,7 +470,7 @@ class XEM(ABC):
         Raises:
             ValueError: If data buffer format is invalid
         """
-        return self.block_pipe_ops.read_from_block_pipe_out(ep_addr, data, reorder_str)
+        return self.block_pipe_ops.read_from_block_pipe_out(ep_addr, data, block_size, reorder_str)
 
     def ActivateTriggerIn(self, ep_addr: int, bit: int) -> int:
         """
