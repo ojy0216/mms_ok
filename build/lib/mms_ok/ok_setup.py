@@ -3,7 +3,7 @@ import os
 import shutil
 import sys
 
-from loog import log
+from loguru import logger
 
 
 def copy_frontpanel_files():
@@ -17,15 +17,15 @@ def copy_frontpanel_files():
         frontpanel_dir = r"C:\Program Files\Opal Kelly\FrontPanelUSB"
 
         if not os.path.exists(frontpanel_dir):
-            log("FrontPanel SDK not found!", level="warning")
-            log(f"Default Directory: {frontpanel_dir}", level="warning")
+            logger.warning("FrontPanel SDK not found!")
+            logger.warning(f"Default Directory: {frontpanel_dir}")
             return
 
         try:
             with open(os.path.join(frontpanel_dir, "ReleaseNotes.txt"), "r") as f:
                 line = f.readline().strip()
                 _, version, *_ = line.split()
-                log(f"FrontPanel SDK Version: {version}", level="info")
+                logger.info(f"FrontPanel SDK Version: {version}")
 
             files = [
                 os.path.join(frontpanel_dir, "API/Python/x64/ok.py"),
@@ -36,11 +36,11 @@ def copy_frontpanel_files():
             for file in files:
                 shutil.copy(src=file, dst=lib_dir)
 
-            log("FrontPanel API ready", level="info")
+            logger.info("FrontPanel API ready")
         except FileNotFoundError:
-            log("FrontPanel SDK files not found!", level="warning")
-            log(f"Default Directory: {frontpanel_dir}", level="warning")
+            logger.warning("FrontPanel SDK files not found!")
+            logger.warning(f"Default Directory: {frontpanel_dir}")
 
         sys.path.append(lib_dir)
     else:
-        log("OS is not Windows!", logging_level=logging.INFO)
+        logger.info("OS is not Windows!")
