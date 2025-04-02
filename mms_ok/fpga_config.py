@@ -1,5 +1,5 @@
 import ok
-from loog import log
+from loguru import logger
 
 
 class FPGAConfig:
@@ -65,10 +65,10 @@ class FPGAConfig:
         and logs warnings for any deviations.
         """
         if self.device_interface != ok.OK_INTERFACE_USB3:
-            log("Device interface is not USB 3!", level="warning")
+            logger.warning("Device interface is not USB 3!")
         if self.wire_width != 32:
-            log("Wire width is not 32!", level="warning")
+            logger.warning("Wire width is not 32!")
         if self.trigger_width != 32:
-            log("Trigger width is not 32!", level="warning")
+            logger.warning("Trigger width is not 32!")
         if self.pipe_width != 32:
-            log("Pipe width is not 32!", level="warning")
+            logger.warning("Pipe width is not 32!")

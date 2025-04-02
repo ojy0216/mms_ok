@@ -1,5 +1,5 @@
 import numpy as np
-from loog import log
+from loguru import logger
 
 
 class PipeOutData:
@@ -40,10 +40,7 @@ class PipeOutData:
         if reorder_str:
             # Reorder the hexadecimal string by swapping the positions of every 2 characters
             if len(hex_str) % 8 != 0:
-                log(
-                    f"Hexadecimal string length must be a multiple of 8!",
-                    level="error",
-                )
+                logger.error("Hexadecimal string length must be a multiple of 8!")
                 raise ValueError("Hexadecimal string length must be a multiple of 8!")
 
             self.__hex_data = "".join(

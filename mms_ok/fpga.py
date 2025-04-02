@@ -7,7 +7,7 @@ from typing import Optional, Type, Union
 
 import numpy as np
 import ok
-from loog import log
+from loguru import logger
 
 from .fpga_components import (
     BlockPipeOperations,
@@ -80,20 +80,10 @@ class XEM(ABC):
 
         self._check_device_settings()
 
-        log(
-            f"AutoWireIn is {'enabled' if self.auto_wire_in else 'disabled'}!",
-            level="info",
-        )
-        log(
-            f"AutoWireOut is {'enabled' if self.auto_wire_out else 'disabled'}!",
-            level="info",
-        )
-        log(
-            f"AutoTriggerOut is {'enabled' if self.auto_trigger_out else 'disabled'}!",
-            level="info",
-        )
-
-        log("FPGA initialized!\n", level="info")
+        logger.info(f"AutoWireIn is {'enabled' if self.auto_wire_in else 'disabled'}!")
+        logger.info(f"AutoWireOut is {'enabled' if self.auto_wire_out else 'disabled'}!")
+        logger.info(f"AutoTriggerOut is {'enabled' if self.auto_trigger_out else 'disabled'}!")
+        logger.info("FPGA initialized!\n")
 
     def _validate_bitstream_path(self) -> None:
         """
@@ -110,23 +100,19 @@ class XEM(ABC):
             ValueError: If the bitstream file extension is not ".bit".
         """
         if not os.path.isfile(self._bitstream_path):
-            log(f'"{self._bitstream_path}" is invalid!', level="critical")
+            logger.critical(f'"{self._bitstream_path}" is invalid!')
             raise FileNotFoundError(f"{self._bitstream_path} is an invalid bitstream!")
 
         extension = os.path.splitext(self._bitstream_path)[1]
         if extension != ".bit":
-            log(
-                f"{extension} is not a valid bitstream file extension!",
-                level="critical",
-            )
+            logger.critical(f"{extension} is not a valid bitstream file extension!")
             raise ValueError(f"{extension} is not a valid bitstream file extension!")
 
-        log(f"Bitstream file: {self._bitstream_path}", level="info")
+        logger.info(f"Bitstream file: {self._bitstream_path}")
 
         timestamp = os.path.getmtime(self._bitstream_path)
-        log(
+        logger.info(
             f"Bitstream date: {datetime.datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')}",
-            level="info",
         )
 
     def _connect(self) -> None:
@@ -143,7 +129,7 @@ class XEM(ABC):
             ConnectionError: If the device fails to open.
         """
         if self.xem.OpenBySerial(""):
-            log("Device is not opened!", level="critical")
+            logger.critical("Device is not opened!")
             raise ConnectionError("Device is not opened!")
 
         device_info = ok.okTDeviceInfo()
@@ -152,14 +138,14 @@ class XEM(ABC):
         self.config = FPGAConfig.from_device_info(device_info)
         self.config.validate()
 
-        log(f"Model        : {self.config.product_name}", level="info")
-        log(f"Serial Number: {self.config.serial_number}", level="info")
-        log(f"Interface    : {self.config.device_interface_str}", level="info")
-        log(f"USB Speed    : {self.config.usb_speed}", level="info")
-        log(f"Max Blocksize: {self.config.max_bt_blocksize}", level="info")
-        log(f"Wire Width   : {self.config.wire_width}", level="info")
-        log(f"Trigger Width: {self.config.trigger_width}", level="info")
-        log(f"Pipe Width   : {self.config.pipe_width}", level="info")
+        logger.info(f"Model        : {self.config.product_name}")
+        logger.info(f"Serial Number: {self.config.serial_number}")
+        logger.info(f"Interface    : {self.config.device_interface_str}")
+        logger.info(f"USB Speed    : {self.config.usb_speed}")
+        logger.info(f"Max Blocksize: {self.config.max_bt_blocksize}")
+        logger.info(f"Wire Width   : {self.config.wire_width}")
+        logger.info(f"Trigger Width: {self.config.trigger_width}")
+        logger.info(f"Pipe Width   : {self.config.pipe_width}")
 
     def _configure(self) -> None:
         """
@@ -177,23 +163,21 @@ class XEM(ABC):
         error_code = self.xem.ConfigureFPGA(self._bitstream_path)
         bitstream_name = os.path.basename(self._bitstream_path)
         if error_code == 0:
-            log(
+            logger.info(
                 f'Input bitstream file: "{bitstream_name}" is connected to the device!',
-                level="info",
             )
         else:
-            log(
+            logger.critical(
                 f'Input bitstream file: "{bitstream_name}" is not connected to the device!',
-                level="critical",
             )
             raise RuntimeError(
                 f'Input bitstream file: "{bitstream_name}" is not connected to the device!'
             )
 
         if self.xem.IsFrontPanelEnabled():
-            log("FrontPanel is enabled!", level="info")
+            logger.info("FrontPanel is enabled!")
         else:
-            log("FrontPanel is not enabled!", level="critical")
+            logger.critical("FrontPanel is not enabled!")
             raise RuntimeError("FrontPanel is not enabled!")
 
     @abstractmethod
@@ -243,15 +227,12 @@ class XEM(ABC):
         Returns:
             None
         """
-        log("Closing device", level="info")
+        logger.info("Closing device")
         if self._led_used:
-            log(
-                "Turning off the LEDs before closing the device!",
-                level="info",
-            )
+            logger.info("Turning off the LEDs before closing the device!")
             self.SetLED(led_value=0, led_address=self._led_address)
         self.xem.Close()
-        log("Device closed!", level="info")
+        logger.info("Device closed!")
 
     def reset(
         self, reset_address: int = 0x00, reset_time: float = 1.0, active_low=True
@@ -274,7 +255,7 @@ class XEM(ABC):
 
         reset_value, nominal_value = (0, 1) if active_low else (1, 0)
 
-        log(f"Reset Start ({reset_time}s)", level="info")
+        logger.info(f"Reset Start ({reset_time}s)")
         self.SetWireInValue(reset_address, reset_value)
         self.UpdateWireIns()
 
@@ -282,7 +263,7 @@ class XEM(ABC):
 
         self.SetWireInValue(reset_address, nominal_value)
         self.UpdateWireIns()
-        log(f"Reset End ({reset_time}s)\n", level="info")
+        logger.info(f"Reset End ({reset_time}s)\n")
 
     @abstractmethod
     def SetLED(self, led_value: int, led_address: int = 0x00) -> None:
@@ -307,7 +288,7 @@ class XEM(ABC):
             auto_update (bool): If True, automatically update wire-in values after setting
         """
         self.auto_wire_in = auto_update
-        log(f"AutoWireIn is {'enabled' if auto_update else 'disabled'}!", level="info")
+        logger.info(f"AutoWireIn is {'enabled' if auto_update else 'disabled'}!")
 
     def SetAutoWireOut(self, auto_update: bool) -> None:
         """
@@ -317,7 +298,7 @@ class XEM(ABC):
             auto_update (bool): If True, automatically update wire-out values after setting
         """
         self.auto_wire_out = auto_update
-        log(f"AutoWireOut is {'enabled' if auto_update else 'disabled'}!", level="info")
+        logger.info(f"AutoWireOut is {'enabled' if auto_update else 'disabled'}!")
 
     def SetAutoTriggerOut(self, auto_update: bool) -> None:
         """
@@ -327,10 +308,7 @@ class XEM(ABC):
             auto_update (bool): If True, automatically update trigger-out values after setting
         """
         self.auto_trigger_out = auto_update
-        log(
-            f"AutoTriggerOut is {'enabled' if auto_update else 'disabled'}!",
-            level="info",
-        )
+        logger.info(f"AutoTriggerOut is {'enabled' if auto_update else 'disabled'}!")
 
     def SetWireInValue(
         self,
@@ -556,9 +534,8 @@ class XEM(ABC):
             if self.IsTriggered(ep_addr, mask, auto_update=True):
                 return
             if time.perf_counter() - start_time > timeout:
-                log(
+                logger.error(
                     f"Trigger ({hex(ep_addr)}) condition not met within {timeout}s",
-                    level="error",
                 )
                 raise TimeoutError(
                     f"Trigger ({hex(ep_addr)}) condition not met within timeout"
@@ -598,10 +575,7 @@ class XEM7310(XEM):
         ]
 
         if self.config.product_id not in target_product_id_list:
-            log(
-                "Connected FPGA board is not a XEM7310A75/A100!",
-                level="critical",
-            )
+            logger.critical("Connected FPGA board is not a XEM7310A75/A100!")
             raise TypeError("Connected FPGA board is not a XEM7310A75/A100!")
 
     def _check_device_settings(self) -> None:
@@ -624,9 +598,8 @@ class XEM7310(XEM):
 
         self._led_used = True
         self._led_address = self._led_address or led_address
-        log(
-            f"Setting LED value to {led_value} ({np.binary_repr(led_value, width=8)})",
-            level="debug",
+        logger.info(
+            f"Setting LED value to {led_value} ({np.binary_repr(led_value, width=8)})"
         )
 
         self.SetWireInValue(self._led_address, led_value, auto_update=True)
@@ -662,10 +635,7 @@ class XEM7360(XEM):
         target_product_id = ok.okCFrontPanel.brdXEM7360K160T
 
         if self.config.product_id != target_product_id:
-            log(
-                "Connected FPGA board is not a XEM7360K160T!",
-                level="critical",
-            )
+            logger.critical("Connected FPGA board is not a XEM7360K160T!")
             raise TypeError("Connected FPGA board is not a XEM7360K160T!")
 
     def _check_device_settings(self) -> None:
@@ -685,23 +655,11 @@ class XEM7360(XEM):
                 for i in range(1, 3 + 1)
             }
 
-            log("Please check the I/O voltage settings.", level="info")
-            log(
-                f"Bank 12 Voltage: {vadj_voltage_dict['vadj2']} mV",
-                level="info",
-            )
-            log(
-                f"Bank 15 Voltage: {vadj_voltage_dict['vadj1']} mV",
-                level="info",
-            )
-            log(
-                f"Bank 16 Voltage: {vadj_voltage_dict['vadj1']} mV",
-                level="info",
-            )
-            log(
-                f"Bank 32 Voltage: {vadj_voltage_dict['vadj3']} mV",
-                level="info",
-            )
+            logger.info("Please check the I/O voltage settings.")
+            logger.info(f"Bank 12 Voltage: {vadj_voltage_dict['vadj2']} mV")
+            logger.info(f"Bank 15 Voltage: {vadj_voltage_dict['vadj1']} mV")
+            logger.info(f"Bank 16 Voltage: {vadj_voltage_dict['vadj1']} mV")
+            logger.info(f"Bank 32 Voltage: {vadj_voltage_dict['vadj3']} mV")
 
             vadj_modes = device_settings.GetInt("XEM7360_VADJ_MODE")
 
@@ -709,15 +667,14 @@ class XEM7360(XEM):
             for i in range(1, 3 + 1):
                 vadj_mode = vadj_modes & vadj_mask
                 if vadj_mode < 2:
-                    log(f"vadj{i} will be set to 120 mV!", level="warning")
-                    log(
-                        f"Please refer to https://docs.opalkelly.com/xem7360/device-settings/",
-                        level="warning",
+                    logger.warning(f"vadj{i} will be set to 120 mV!")
+                    logger.warning(
+                        "Please refer to https://docs.opalkelly.com/xem7360/device-settings/"
                     )
 
                 vadj_mask <<= 2
         except Exception as e:
-            log(f"Error getting device settings: {e}", level="warning")
+            logger.exception(f"Error getting device settings: {e}")
 
     def SetLED(self, led_value: int, led_address: int = 0x00) -> None:
         """
@@ -735,9 +692,8 @@ class XEM7360(XEM):
 
         self._led_used = True
         self._led_address = self._led_address or led_address
-        log(
-            f"Setting LED value to {led_value} ({np.binary_repr(led_value, width=4)})",
-            level="debug",
+        logger.info(
+            f"Setting LED value to {led_value} ({np.binary_repr(led_value, width=4)})"
         )
 
         self.SetWireInValue(self._led_address, led_value, auto_update=True)
