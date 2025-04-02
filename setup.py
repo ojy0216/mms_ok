@@ -7,6 +7,7 @@ setup(
     install_requires=[
         "numpy",
         "bitslice",
+        "loguru",
     ],
     author_email="juyoung.oh@snu.ac.kr",
     description="Python package for interfacing with Opal Kelly FPGA boards",
