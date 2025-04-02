@@ -42,12 +42,16 @@ class FPGAConfig:
             FPGAConfig: Configured instance
         """
         interface_list = ["Unknown", "USB 2", "PCIe", "USB 3"]
+        usb_speed_list = ["Unknown", "FULL", "HIGH", "SUPER"]
+        bt_max_blocksize_list = [-1, 64, 1024, 16384]
         config = cls()
         config.product_name = device_info.productName
         config.serial_number = device_info.serialNumber
         config.product_id = device_info.productID
         config.device_interface = device_info.deviceInterface
         config.device_interface_str = interface_list[device_info.deviceInterface]
+        config.max_bt_blocksize = bt_max_blocksize_list[device_info.deviceInterface]
+        config.usb_speed = usb_speed_list[device_info.usbSpeed]
         config.wire_width = device_info.wireWidth
         config.trigger_width = device_info.triggerWidth
         config.pipe_width = device_info.pipeWidth

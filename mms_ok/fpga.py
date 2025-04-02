@@ -76,7 +76,7 @@ class XEM(ABC):
         self.wire_ops = WireOperations(self.xem, self.config.wire_width)
         self.trigger_ops = TriggerOperations(self.xem, self.config.trigger_width)
         self.pipe_ops = PipeOperations(self.xem)
-        self.block_pipe_ops = BlockPipeOperations(self.xem)
+        self.block_pipe_ops = BlockPipeOperations(self.xem, self.config.max_bt_blocksize)
 
         self._check_device_settings()
 
@@ -155,6 +155,8 @@ class XEM(ABC):
         log(f"Model        : {self.config.product_name}", level="info")
         log(f"Serial Number: {self.config.serial_number}", level="info")
         log(f"Interface    : {self.config.device_interface_str}", level="info")
+        log(f"USB Speed    : {self.config.usb_speed}", level="info")
+        log(f"Max Blocksize: {self.config.max_bt_blocksize}", level="info")
         log(f"Wire Width   : {self.config.wire_width}", level="info")
         log(f"Trigger Width: {self.config.trigger_width}", level="info")
         log(f"Pipe Width   : {self.config.pipe_width}", level="info")

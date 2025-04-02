@@ -425,7 +425,7 @@ class BlockPipeOperations:
         xem (ok.okCFrontPanel): Low-level interface to the FPGA device
     """
 
-    def __init__(self, xem: ok.okCFrontPanel):
+    def __init__(self, xem: ok.okCFrontPanel, bt_max_blocksize: int):
         """
         Initialize block pipe operations interface.
 
@@ -434,6 +434,7 @@ class BlockPipeOperations:
         """
         self.xem = xem
         self.pipe_ops = PipeOperations(xem)
+        self.bt_max_blocksize = bt_max_blocksize
 
     def write_to_block_pipe_in(
         self,
@@ -458,7 +459,7 @@ class BlockPipeOperations:
         validate_address(0x80, 0x9F, ep_addr)
 
         prepared_data = self.pipe_ops._prepare_data(data, reorder_str)
-        block_size = len(prepared_data)
+        block_size = min(len(prepared_data), self.bt_max_blocksize) if self.bt_max_blocksize > 0 else len(prepared_data)
 
         error_code = self.xem.WriteToBlockPipeIn(ep_addr, block_size, prepared_data)
         if error_code < 0:
@@ -488,7 +489,8 @@ class BlockPipeOperations:
         validate_address(0xA0, 0xBF, ep_addr)
 
         buffer = self.pipe_ops._prepare_read_buffer(data)
-        block_size = len(buffer)
+
+        block_size = min(len(buffer), self.bt_max_blocksize) if self.bt_max_blocksize > 0 else len(buffer)
 
         error_code = self.xem.ReadFromBlockPipeOut(ep_addr, block_size, buffer)
         if error_code < 0:
