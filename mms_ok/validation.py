@@ -16,6 +16,7 @@ def validate_wire_value(value: int, num_bits: int) -> None:
         logger.error(f"Value must be between 0 and {2**num_bits - 1}, got {value}")
         raise ValueError(f"Value must be between 0 and {2**num_bits - 1}, got {value}")
 
+
 def validate_block_size(block_size: int, max_block_size: int) -> None:
     if block_size is None:
         return

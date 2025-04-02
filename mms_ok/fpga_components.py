@@ -5,7 +5,7 @@ import ok
 from loguru import logger
 
 from .pipeoutdata import PipeOutData
-from .validation import validate_address, validate_wire_value, validate_block_size
+from .validation import validate_address, validate_block_size, validate_wire_value
 
 
 class WireOperations:
@@ -452,7 +452,11 @@ class BlockPipeOperations:
         prepared_data = self.pipe_ops._prepare_data(data, reorder_str)
 
         if block_size is None:
-            block_size = min(len(prepared_data), self.bt_max_blocksize) if self.bt_max_blocksize > 0 else len(prepared_data)
+            block_size = (
+                min(len(prepared_data), self.bt_max_blocksize)
+                if self.bt_max_blocksize > 0
+                else len(prepared_data)
+            )
         else:
             validate_block_size(block_size, self.bt_max_blocksize)
 
@@ -464,7 +468,11 @@ class BlockPipeOperations:
         return error_code
 
     def read_from_block_pipe_out(
-        self, ep_addr: int, data: Union[int, bytearray], block_size: int = None, reorder_str: bool = True
+        self,
+        ep_addr: int,
+        data: Union[int, bytearray],
+        block_size: int = None,
+        reorder_str: bool = True,
     ) -> PipeOutData:
         """
         Read data from a block pipe-out endpoint.
@@ -486,7 +494,11 @@ class BlockPipeOperations:
         buffer = self.pipe_ops._prepare_read_buffer(data)
 
         if block_size is None:
-            block_size = min(len(buffer), self.bt_max_blocksize) if self.bt_max_blocksize > 0 else len(buffer)
+            block_size = (
+                min(len(buffer), self.bt_max_blocksize)
+                if self.bt_max_blocksize > 0
+                else len(buffer)
+            )
         else:
             validate_block_size(block_size, self.bt_max_blocksize)
 

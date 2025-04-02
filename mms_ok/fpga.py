@@ -76,13 +76,19 @@ class XEM(ABC):
         self.wire_ops = WireOperations(self.xem, self.config.wire_width)
         self.trigger_ops = TriggerOperations(self.xem, self.config.trigger_width)
         self.pipe_ops = PipeOperations(self.xem)
-        self.block_pipe_ops = BlockPipeOperations(self.xem, self.config.max_bt_blocksize)
+        self.block_pipe_ops = BlockPipeOperations(
+            self.xem, self.config.max_bt_blocksize
+        )
 
         self._check_device_settings()
 
         logger.info(f"AutoWireIn is {'enabled' if self.auto_wire_in else 'disabled'}!")
-        logger.info(f"AutoWireOut is {'enabled' if self.auto_wire_out else 'disabled'}!")
-        logger.info(f"AutoTriggerOut is {'enabled' if self.auto_trigger_out else 'disabled'}!")
+        logger.info(
+            f"AutoWireOut is {'enabled' if self.auto_wire_out else 'disabled'}!"
+        )
+        logger.info(
+            f"AutoTriggerOut is {'enabled' if self.auto_trigger_out else 'disabled'}!"
+        )
         logger.info("FPGA initialized!\n")
 
     def _validate_bitstream_path(self) -> None:
@@ -450,7 +456,11 @@ class XEM(ABC):
         )
 
     def ReadFromBlockPipeOut(
-        self, ep_addr: int, data: Union[int, bytearray], block_size: int = None, reorder_str: bool = True
+        self,
+        ep_addr: int,
+        data: Union[int, bytearray],
+        block_size: int = None,
+        reorder_str: bool = True,
     ) -> PipeOutData:
         """
         Read data from a block pipe-out endpoint.
@@ -470,7 +480,9 @@ class XEM(ABC):
         Raises:
             ValueError: If data buffer format is invalid
         """
-        return self.block_pipe_ops.read_from_block_pipe_out(ep_addr, data, block_size, reorder_str)
+        return self.block_pipe_ops.read_from_block_pipe_out(
+            ep_addr, data, block_size, reorder_str
+        )
 
     def ActivateTriggerIn(self, ep_addr: int, bit: int) -> int:
         """
