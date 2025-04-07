@@ -18,7 +18,9 @@ A Python library for interfacing with FPGA devices using the Opal Kelly FrontPan
 
 - Python 3.7 or higher
 - NumPy
-- loog
+- BitSlice
+- Loguru
+- Rich
 - Opal Kelly FrontPanel API
 - Install the Opal Kelly FrontPanel API according to the [official documentation](https://docs.opalkelly.com/fpsdk/frontpanel-api/).
 
@@ -177,8 +179,8 @@ Abstract base class for Opal Kelly FPGA devices. Provides common functionality f
 - `GetWireOutValue(ep_addr, auto_update)`: Get the value of a wire-out endpoint
 - `WriteToPipeIn(ep_addr, data, reorder_str)`: Write data to a pipe-in endpoint
 - `ReadFromPipeOut(ep_addr, data, reorder_str)`: Read data from a pipe-out endpoint
-- `WriteToBlockPipeIn(ep_addr, data, reorder_str)`: Write data to a block pipe-in endpoint
-- `ReadFromBlockPipeOut(ep_addr, data, reorder_str)`: Read data from a block pipe-out endpoint
+- `WriteToBlockPipeIn(ep_addr, data, block_size, reorder_str)`: Write data to a block pipe-in endpoint
+- `ReadFromBlockPipeOut(ep_addr, data, block_size, reorder_str)`: Read data from a block pipe-out endpoint
 - `ActivateTriggerIn(ep_addr, bit)`: Activate a trigger-in endpoint
 - `UpdateTriggerOuts()`: Update all trigger-out endpoints
 - `IsTriggered(ep_addr, mask, auto_update)`: Check if specific trigger bits are set
@@ -201,46 +203,6 @@ Specific implementation for the XEM7360K160T FPGA board. Inherits from XEM base 
 
 All methods from XEM base class, plus:
 - `SetLED(led_value, led_address)`: Control the 4 LEDs on the XEM7360 board
-
-### WireOperations
-
-Interface for wire-based I/O operations on FPGA devices.
-
-#### Methods
-
-- `set_wire_in(ep_addr, value, mask)`: Set a value to be written to a wire-in endpoint
-- `update_wire_ins()`: Update all wire-in endpoints
-- `update_wire_outs()`: Update all wire-out endpoints
-- `get_wire_out(ep_addr)`: Get the value of a wire-out endpoint
-
-### TriggerOperations
-
-Interface for trigger-based operations on FPGA devices.
-
-#### Methods
-
-- `activate_trigger_in(ep_addr, bit)`: Activate a trigger-in endpoint
-- `update_trigger_outs()`: Update all trigger-out endpoints
-- `is_triggered(ep_addr, mask)`: Check if specific trigger bits are set
-
-### PipeOperations
-
-Interface for pipe data transfer operations on FPGA devices.
-
-#### Methods
-
-- `write_to_pipe_in(ep_addr, data, reorder_str)`: Write data to a pipe-in endpoint
-- `read_from_pipe_out(ep_addr, data, reorder_str)`: Read data from a pipe-out endpoint
-- `reorder_hex_str(hex_str)`: Reorders a hexadecimal string by swapping positions
-
-### BlockPipeOperations
-
-Interface for block pipe data transfer operations on FPGA devices.
-
-#### Methods
-
-- `write_to_block_pipe_in(ep_addr, data, reorder_str)`: Write data to a block pipe-in endpoint
-- `read_from_block_pipe_out(ep_addr, data, reorder_str)`: Read data from a block pipe-out endpoint
 
 ### PipeOutData
 
