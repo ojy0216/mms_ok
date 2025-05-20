@@ -556,6 +556,36 @@ class XEM(ABC):
                     f"Trigger ({hex(ep_addr)}) condition not met within timeout"
                 )
 
+    def WriteRegister(self, addr: int, data: int) -> int:
+        """
+        Write a value to a register bridge.
+
+        Args:
+            addr (int): Register address (32-bit)
+            data (int): Value to write (32-bit)
+
+        Returns:
+            int: Error code (0 on success)
+        """
+        validate_address(0, 2**32, addr)
+        validate_wire_value(data, 32)
+
+        return self.xem.WriteRegister(addr, data)
+
+    def ReadRegister(self, addr: int) -> int:
+        """
+        Read a value from a register bridge.
+
+        Args:
+            addr (int): Register address (32-bit)
+
+        Returns:
+            int: Value read from the register
+        """
+        validate_address(0, 2**32, addr)
+
+        return self.xem.ReadRegister(addr)
+
 
 class XEM7310(XEM):
     """

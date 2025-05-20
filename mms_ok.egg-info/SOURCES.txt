@@ -2,6 +2,8 @@ LICENSE
 README.md
 setup.py
 mms_ok/__init__.py
+mms_ok/bist.py
+mms_ok/bist_util.py
 mms_ok/fpga.py
 mms_ok/fpga_components.py
 mms_ok/fpga_config.py
