@@ -11,6 +11,9 @@ A Python library for interfacing with FPGA devices using the Opal Kelly FrontPan
 - Comprehensive error handling and validation
 - Utilities for data conversion and manipulation
 - Support for XEM7310 and XEM7360 FPGA boards
+- Register bridge operations (reading/writing registers)
+- Automatic update control for wire and trigger operations
+- Context manager support for safe device handling
 
 ## Installation
 
@@ -122,11 +125,6 @@ with XEM7310("path/to/bitstream.bit") as fpga:
     value = fpga.GetWireOutValue(0x22, auto_update=True)     # One-time auto-update
 ```
 
-Automatic updates are useful for simple operations, but disabling them can be more efficient when:
-- Setting multiple wire values before updating them all at once
-- Performing time-critical operations where explicit control is needed
-- Optimizing performance for high-throughput applications
-
 ### Reading and Writing Data
 
 ```python
@@ -160,6 +158,20 @@ with XEM7310("path/to/bitstream.bit") as fpga:
     large_result = fpga.ReadFromBlockPipeOut(0xA0, 4096)  # 4096 bytes
 ```
 
+### Register Operations
+
+```python
+from mms_ok import XEM7310
+
+with XEM7310("path/to/bitstream.bit") as fpga:
+    # Write to a register
+    fpga.WriteRegister(0x1000, 0x12345678)
+    
+    # Read from a register
+    value = fpga.ReadRegister(0x1000)
+    print(f"Register value: 0x{value:08X}")
+```
+
 ## API Documentation
 
 ### XEM Base Class
@@ -185,6 +197,8 @@ Abstract base class for Opal Kelly FPGA devices. Provides common functionality f
 - `UpdateTriggerOuts()`: Update all trigger-out endpoints
 - `IsTriggered(ep_addr, mask, auto_update)`: Check if specific trigger bits are set
 - `CheckTriggered(ep_addr, mask, timeout)`: Check if a trigger condition is met within a specified timeout
+- `WriteRegister(addr, data)`: Write a value to a register bridge
+- `ReadRegister(addr)`: Read a value from a register bridge
 
 ### XEM7310 Class
 
