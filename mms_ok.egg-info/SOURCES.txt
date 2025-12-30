@@ -1,5 +1,6 @@
 LICENSE
 README.md
+pyproject.toml
 setup.py
 mms_ok/__init__.py
 mms_ok/bist.py

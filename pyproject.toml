@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mms_ok"
+version = "1.1.1"
+description = "Python package for interfacing with Opal Kelly FPGA boards"
+readme = "README.md"
+requires-python = ">=3.7"
+license = {file = "LICENSE"}
+authors = [
+  {name = "Juyoung Oh", email = "juyoung.oh@snu.ac.kr"},
+]
+classifiers = [
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3",
+  "Topic :: Scientific/Engineering",
+]
+dependencies = [
+  "numpy",
+  "bitslice",
+  "loguru",
+  "rich",
+  "tqdm",
+]
+
+[project.urls]
+Repository = "https://github.com/ojy0216/mms_ok"
