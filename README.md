@@ -34,12 +34,12 @@ pip install mms_ok
 
 ## Quick Start
 
-### Using the XEM Classes
+### Using the XEM Classes w/ Context Manager
+#### Recommanded for .py file execution
 
 ```python
-from mms_ok import XEM7310, XEM7360
+from mms_ok import XEM7310
 
-# For XEM7310 boards
 with XEM7310("path/to/bitstream.bit") as fpga:
     # Reset the FPGA
     fpga.reset(reset_address=0x00, reset_time=1.0, active_low=True)
@@ -78,15 +78,20 @@ with XEM7310("path/to/bitstream.bit") as fpga:
     import numpy as np
     array_data = data.to_ndarray(dtype=np.uint16)
     print(f"As array: {array_data}")
+```
 
-# For XEM7360 boards
-fpga = XEM7360("path/to/bitstream.bit"):
+### Manual Instantiation
+#### Recommended for Jupyter Notebook Environment
+  
+```python
+from mms_ok import XEM7360
 
-# XEM7360 has 4 LEDs
-fpga.SetLED(led_value=0x0F)  # Turn on all 4 LEDs
+# Initialize and open the device
+fpga = XEM7360("path/to/bitstream.bit")
 
-# The rest of the API is the same as XEM7310
+# User Code Below
 
+# Always close the connection manually
 fpga.close()
 ```
 
