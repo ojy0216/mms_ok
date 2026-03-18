@@ -27,19 +27,20 @@ class BIST(XEM):
         logger.info(f"Product Name: {self.config.product_name}")
 
         # Get the package directory
-        self.package_dir = os.path.dirname(
-            pkg_resources.resource_filename(__name__, "__init__.py")
-        )
+        # self.package_dir = os.path.dirname(
+        #     pkg_resources.resource_filename(__name__, "__init__.py")
+        # )
+        self.bitstream_dir = os.path.expanduser("~/mms_ok/bitstreams")
 
         bitstream_dict = {
             "XEM7310-A75": os.path.join(
-                self.package_dir, "bitstreams", "A75_boardtest.bit"
+                self.bitstream_dir, "A75_boardtest.bit"
             ),
             "XEM7310-A200": os.path.join(
-                self.package_dir, "bitstreams", "A200_boardtest.bit"
+                self.bitstream_dir, "A200_boardtest.bit"
             ),
             "XEM7360-K160T": os.path.join(
-                self.package_dir, "bitstreams", "K160T_boardtest.bit"
+                self.bitstream_dir, "K160T_boardtest.bit"
             ),
         }
 

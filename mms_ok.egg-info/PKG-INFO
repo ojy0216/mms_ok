@@ -1,6 +1,6 @@
-Metadata-Version: 2.4
+Metadata-Version: 2.1
 Name: mms_ok
-Version: 1.1.1
+Version: 1.2.0
 Summary: Python package for interfacing with Opal Kelly FPGA boards
 Author-email: Juyoung Oh <juyoung.oh@snu.ac.kr>
 License: MIT License
@@ -37,8 +37,6 @@ Requires-Dist: bitslice
 Requires-Dist: loguru
 Requires-Dist: rich
 Requires-Dist: tqdm
-Dynamic: license-file
-Dynamic: requires-python
 
 # MMS-OK: FPGA Interface Library
 
@@ -74,14 +72,20 @@ A Python library for interfacing with FPGA devices using the Opal Kelly FrontPan
 pip install mms_ok
 ```
 
+### BIST Execution Prerequisites
+If you want to perform BIST (Built-In Self-Test), you need to set up the bitstream files:
+1. Download the bitstream files from the GitHub repository.
+2. Create a `bitstreams` folder inside the `mms_ok` directory generated in your User directory.
+3. Place the downloaded bitstream files into the `bitstreams` folder.
+
 ## Quick Start
 
-### Using the XEM Classes
+### Using the XEM Classes w/ Context Manager
+#### Recommanded for .py file execution
 
 ```python
-from mms_ok import XEM7310, XEM7360
+from mms_ok import XEM7310
 
-# For XEM7310 boards
 with XEM7310("path/to/bitstream.bit") as fpga:
     # Reset the FPGA
     fpga.reset(reset_address=0x00, reset_time=1.0, active_low=True)
@@ -120,15 +124,20 @@ with XEM7310("path/to/bitstream.bit") as fpga:
     import numpy as np
     array_data = data.to_ndarray(dtype=np.uint16)
     print(f"As array: {array_data}")
+```
 
-# For XEM7360 boards
-fpga = XEM7360("path/to/bitstream.bit"):
+### Manual Instantiation
+#### Recommended for Jupyter Notebook Environment
+  
+```python
+from mms_ok import XEM7360
 
-# XEM7360 has 4 LEDs
-fpga.SetLED(led_value=0x0F)  # Turn on all 4 LEDs
+# Initialize and open the device
+fpga = XEM7360("path/to/bitstream.bit")
 
-# The rest of the API is the same as XEM7310
+# User Code Below
 
+# Always close the connection manually
 fpga.close()
 ```
 

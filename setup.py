@@ -2,7 +2,7 @@ from setuptools import find_packages, setup
 
 setup(
     name="mms_ok",
-    version="1.1.1",
+    version="1.2.0",
     packages=find_packages(),
     install_requires=[
         "numpy",
