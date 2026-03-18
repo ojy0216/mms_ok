@@ -696,15 +696,15 @@ class XEM7360(XEM):
 
         try:
             vadj_voltage_dict = {
-                f"vadj{i}": device_settings.GetInt(f"XEM7360_VADJ{i}_VOLTAGE")
+                f"vadj{i}": device_settings.GetInt(f"XEM7360_VADJ{i}_VOLTAGE") / 100
                 for i in range(1, 3 + 1)
             }
 
             logger.info("Please check the I/O voltage settings.")
-            logger.info(f"Bank 12 Voltage: {vadj_voltage_dict['vadj2']} mV")
-            logger.info(f"Bank 15 Voltage: {vadj_voltage_dict['vadj1']} mV")
-            logger.info(f"Bank 16 Voltage: {vadj_voltage_dict['vadj1']} mV")
-            logger.info(f"Bank 32 Voltage: {vadj_voltage_dict['vadj3']} mV")
+            logger.info(f"Bank 12 Voltage: {vadj_voltage_dict['vadj2']:.2f} V")
+            logger.info(f"Bank 15 Voltage: {vadj_voltage_dict['vadj1']:.2f} V")
+            logger.info(f"Bank 16 Voltage: {vadj_voltage_dict['vadj1']:.2f} V")
+            logger.info(f"Bank 32 Voltage: {vadj_voltage_dict['vadj3']:.2f} V")
 
             vadj_modes = device_settings.GetInt("XEM7360_VADJ_MODE")
 
@@ -712,7 +712,7 @@ class XEM7360(XEM):
             for i in range(1, 3 + 1):
                 vadj_mode = vadj_modes & vadj_mask
                 if vadj_mode < 2:
-                    logger.warning(f"vadj{i} will be set to 120 mV!")
+                    logger.warning(f"vadj{i} will be set to 1.20 V!")
                     logger.warning(
                         "Please refer to https://docs.opalkelly.com/xem7360/device-settings/"
                     )
