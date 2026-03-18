@@ -32,6 +32,12 @@ A Python library for interfacing with FPGA devices using the Opal Kelly FrontPan
 pip install mms_ok
 ```
 
+### BIST Execution Prerequisites
+If you want to perform BIST (Built-In Self-Test), you need to set up the bitstream files:
+1. Download the bitstream files from the GitHub repository.
+2. Create a `bitstreams` folder inside the `mms_ok` directory generated in your User directory.
+3. Place the downloaded bitstream files into the `bitstreams` folder.
+
 ## Quick Start
 
 ### Using the XEM Classes w/ Context Manager
