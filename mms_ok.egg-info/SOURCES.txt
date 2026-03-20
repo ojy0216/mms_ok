@@ -3,6 +3,7 @@ README.md
 pyproject.toml
 setup.py
 mms_ok/__init__.py
+mms_ok/address.py
 mms_ok/bist.py
 mms_ok/bist_util.py
 mms_ok/fpga.py

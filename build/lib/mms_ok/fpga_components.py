@@ -5,6 +5,7 @@ import ok
 from loguru import logger
 
 from .pipeoutdata import PipeOutData
+from .address import Address
 from .validation import validate_address, validate_block_size, validate_wire_value
 
 
@@ -46,7 +47,7 @@ class WireOperations:
         Raises:
             ValueError: If endpoint address or value is invalid
         """
-        validate_address(0x00, 0x1F, ep_addr)
+        validate_address(Address.WireInStart, Address.WireInEnd, ep_addr)
         validate_wire_value(value, self.wire_width)
 
         if mask is None:
@@ -118,7 +119,7 @@ class WireOperations:
         Note:
             update_wire_outs() must be called before this method to get current values.
         """
-        validate_address(0x20, 0x3F, ep_addr)
+        validate_address(Address.WireOutStart, Address.WireOutEnd, ep_addr)
         return self.xem.GetWireOutValue(ep_addr)
 
 
@@ -160,7 +161,7 @@ class TriggerOperations:
         Raises:
             ValueError: If endpoint address or bit position is invalid
         """
-        validate_address(0x40, 0x5F, ep_addr)
+        validate_address(Address.TriggerInStart, Address.TriggerInEnd, ep_addr)
 
         if not 0 <= bit < self.trigger_width:
             logger.error(
@@ -210,7 +211,7 @@ class TriggerOperations:
         Note:
             update_trigger_outs() must be called before this method to get current trigger states.
         """
-        validate_address(0x60, 0x7F, ep_addr)
+        validate_address(Address.TriggerOutStart, Address.TriggerOutEnd, ep_addr)
 
         if not 0 <= mask < (1 << self.trigger_width):
             hex_str_len = int(2 * (np.log2(self.trigger_width) - 1))
@@ -358,7 +359,7 @@ class PipeOperations:
         Raises:
             ValueError: If endpoint address or data format is invalid
         """
-        validate_address(0x80, 0x9F, ep_addr)
+        validate_address(Address.PipeInStart, Address.PipeInEnd, ep_addr)
 
         prepared_data = self._prepare_data(data, reorder_str)
 
@@ -386,7 +387,7 @@ class PipeOperations:
         Raises:
             ValueError: If endpoint address or buffer format is invalid
         """
-        validate_address(0xA0, 0xBF, ep_addr)
+        validate_address(Address.PipeOutStart, Address.PipeOutEnd, ep_addr)
 
         buffer = self._prepare_read_buffer(data)
 
@@ -447,7 +448,7 @@ class BlockPipeOperations:
         Raises:
             ValueError: If endpoint address or data format is invalid
         """
-        validate_address(0x80, 0x9F, ep_addr)
+        validate_address(Address.BlockPipeInStart, Address.BlockPipeInEnd, ep_addr)
 
         prepared_data = self.pipe_ops._prepare_data(data, reorder_str)
 
@@ -489,7 +490,7 @@ class BlockPipeOperations:
         Raises:
             ValueError: If endpoint address or buffer format is invalid
         """
-        validate_address(0xA0, 0xBF, ep_addr)
+        validate_address(Address.BlockPipeOutStart, Address.BlockPipeOutEnd, ep_addr)
 
         buffer = self.pipe_ops._prepare_read_buffer(data)
 

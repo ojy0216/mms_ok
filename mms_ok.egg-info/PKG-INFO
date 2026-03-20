@@ -1,6 +1,6 @@
 Metadata-Version: 2.1
-Name: mms-ok
-Version: 1.2.0
+Name: mms_ok
+Version: 1.2.1
 Summary: Python package for interfacing with Opal Kelly FPGA boards
 Author-email: Juyoung Oh <juyoung.oh@snu.ac.kr>
 License: MIT License
@@ -32,6 +32,11 @@ Classifier: Topic :: Scientific/Engineering
 Requires-Python: >=3.7
 Description-Content-Type: text/markdown
 License-File: LICENSE
+Requires-Dist: numpy
+Requires-Dist: bitslice
+Requires-Dist: loguru
+Requires-Dist: rich
+Requires-Dist: tqdm
 
 # MMS-OK: FPGA Interface Library
 
