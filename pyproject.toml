@@ -27,3 +27,12 @@ dependencies = [
 
 [project.urls]
 Repository = "https://github.com/ojy0216/mms_ok"
+
+[project.scripts]
+mms_ok = "mms_ok.cli:main"
+
+[tool.setuptools.package-data]
+mms_ok = ["bitstreams/*.bit"]
+
+[tool.setuptools.packages.find]
+exclude = ["tests", "tests.*"]

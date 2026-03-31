@@ -72,9 +72,13 @@ class PipeOutData:
         return max(self.__error_code, 0)
 
     def __repr__(self) -> str:
-        return self.hex_data
+        return "PipeOutData(error_code={}, transfer_byte={}, hex_data={!r})".format(
+            self.error_code, self.transfer_byte, self.hex_data
+        )
 
     def __eq__(self, other) -> bool:
+        if isinstance(other, PipeOutData):
+            return self.hex_data == other.hex_data
         return self.hex_data == other
 
     def __ne__(self, other) -> bool:

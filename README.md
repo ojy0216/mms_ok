@@ -9,7 +9,6 @@ A Python library for interfacing with FPGA devices using the Opal Kelly FrontPan
 - Pipe data transfer operations (reading/writing data through pipes)
 - Block pipe operations for efficient large data transfers
 - Comprehensive error handling and validation
-- Utilities for data conversion and manipulation
 - Support for XEM7310 and XEM7360 FPGA boards
 - Register bridge operations (reading/writing registers)
 - Automatic update control for wire and trigger operations
@@ -32,11 +31,39 @@ A Python library for interfacing with FPGA devices using the Opal Kelly FrontPan
 pip install mms_ok
 ```
 
+### CLI Quick Start
+After installation, the command-line entry point is:
+
+```bash
+mms_ok --help
+```
+
+Useful commands:
+
+```bash
+mms_ok version
+mms_ok check-sdk
+mms_ok bist
+```
+
 ### BIST Execution Prerequisites
-If you want to perform BIST (Built-In Self-Test), you need to set up the bitstream files:
-1. Download the bitstream files from the GitHub repository.
-2. Create a `bitstreams` folder inside the `mms_ok` directory generated in your User directory.
-3. Place the downloaded bitstream files into the `bitstreams` folder.
+The package now ships with the BIST bitstreams under `mms_ok/bitstreams`, so no
+extra manual copy step is required for normal installs. For backward
+compatibility, BIST also falls back to `~/mms_ok/bitstreams` if packaged files
+are unavailable.
+
+### Running BIST
+You can run BIST directly from the command line:
+
+```bash
+mms_ok bist
+```
+
+If you prefer module execution, this also works:
+
+```bash
+python -m mms_ok bist
+```
 
 ## Quick Start
 

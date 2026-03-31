@@ -5,20 +5,38 @@ import sys
 import time
 from secrets import token_hex
 
-import ok
-import pkg_resources
 from loguru import logger
 from rich.console import Console
 from rich.table import Table
 
 from .bist_util import btpipe_progress, pipe_progress, trigger_progress, wire_progress
 from .fpga import XEM, XEM7310, XEM7360
+from .ok_setup import get_ok
 
 console = Console()
+
+PACKAGE_DIR = os.path.dirname(__file__)
+PACKAGE_BITSTREAM_DIR = os.path.join(PACKAGE_DIR, "bitstreams")
+LEGACY_BITSTREAM_DIR = os.path.expanduser("~/mms_ok/bitstreams")
+
+NUM_TEST_CHANNELS = 32
+PIPE_TRANSFER_BYTES = 128 // 8
+
+WIRE_IN_BASE = 0x00
+WIRE_OUT_BASE = 0x20
+TRIGGER_IN_BASE = 0x40
+TRIGGER_OUT_BASE = 0x60
+PIPE_IN_BASE = 0x80
+PIPE_OUT_BASE = 0xA0
+
+RESET_WIRE_ADDRESS = 0x00
+TRIGGER_BIT = 0
+TRIGGER_MASK = 0x1
 
 
 class BIST(XEM):
     def __init__(self):
+        ok = get_ok()
         self.xem = ok.okCFrontPanel()
 
         self._connect()
@@ -26,28 +44,19 @@ class BIST(XEM):
         logger.info("Initializing BIST...")
         logger.info(f"Product Name: {self.config.product_name}")
 
-        # Get the package directory
-        # self.package_dir = os.path.dirname(
-        #     pkg_resources.resource_filename(__name__, "__init__.py")
-        # )
-        self.bitstream_dir = os.path.expanduser("~/mms_ok/bitstreams")
-
         bitstream_dict = {
-            "XEM7310-A75": os.path.join(
-                self.bitstream_dir, "A75_boardtest.bit"
-            ),
-            "XEM7310-A200": os.path.join(
-                self.bitstream_dir, "A200_boardtest.bit"
-            ),
-            "XEM7360-K160T": os.path.join(
-                self.bitstream_dir, "K160T_boardtest.bit"
-            ),
+            "XEM7310-A75": "A75_boardtest.bit",
+            "XEM7310-A200": "A200_boardtest.bit",
+            "XEM7360-K160T": "K160T_boardtest.bit",
         }
 
-        self._bitstream_path = bitstream_dict.get(self.config.product_name, None)
+        bitstream_name = bitstream_dict.get(self.config.product_name, None)
 
-        if self._bitstream_path is None:
+        if bitstream_name is None:
             logger.critical(f"Invalid product name: {self.config.product_name}")
+            raise ValueError(f"Invalid product name: {self.config.product_name}")
+
+        self._bitstream_path = self._resolve_bitstream_path(bitstream_name)
 
         self._validate_bitstream_path()
 
@@ -57,6 +66,24 @@ class BIST(XEM):
         self.pipe_correct = 0
         self.btpipe_correct = 0
         self.trigger_correct = 0
+
+    @staticmethod
+    def _resolve_bitstream_path(bitstream_name: str) -> str:
+        candidate_paths = [
+            os.path.join(PACKAGE_BITSTREAM_DIR, bitstream_name),
+            os.path.join(LEGACY_BITSTREAM_DIR, bitstream_name),
+        ]
+
+        for path in candidate_paths:
+            if os.path.isfile(path):
+                logger.info(f"Using BIST bitstream: {path}")
+                return path
+
+        raise FileNotFoundError(
+            "BIST bitstream not found. Checked: {}".format(
+                ", ".join(candidate_paths)
+            )
+        )
 
     def _check_device_settings(self):
         raise NotImplementedError("Not needed for BIST")
@@ -77,14 +104,14 @@ class BIST(XEM):
 
         """ Wire Test """
         with wire_progress:
-            task = wire_progress.add_task("Testing Wires", total=32)
+            task = wire_progress.add_task("Testing Wires", total=NUM_TEST_CHANNELS)
 
-            for i in range(32):
+            for i in range(NUM_TEST_CHANNELS):
                 data = random.randint(0, 2**32 - 1)
 
-                fpga.SetWireInValue(ep_addr=i, value=data)
+                fpga.SetWireInValue(ep_addr=WIRE_IN_BASE + i, value=data)
 
-                read_data = fpga.GetWireOutValue(ep_addr=0x20 + i)
+                read_data = fpga.GetWireOutValue(ep_addr=WIRE_OUT_BASE + i)
 
                 if data != read_data:
                     logger.error(f"Error at wire {i}: expected {data}, got {read_data}")
@@ -93,22 +120,24 @@ class BIST(XEM):
 
                 wire_progress.update(task, completed=i + 1)
 
-        console.log(f"Wires correct: {self.wire_correct}/32")
+        console.log(f"Wires correct: {self.wire_correct}/{NUM_TEST_CHANNELS}")
 
         time.sleep(1)
 
         """ Pipe Test """
-        fpga.reset(reset_address=0)
+        fpga.reset(reset_address=RESET_WIRE_ADDRESS)
 
         with pipe_progress:
-            task = pipe_progress.add_task("Testing Pipes", total=32)
+            task = pipe_progress.add_task("Testing Pipes", total=NUM_TEST_CHANNELS)
 
-            for i in range(32):
-                data = token_hex(128 // 8).upper()
+            for i in range(NUM_TEST_CHANNELS):
+                data = token_hex(PIPE_TRANSFER_BYTES).upper()
 
-                fpga.WriteToPipeIn(ep_addr=0x80 + i, data=data)
+                fpga.WriteToPipeIn(ep_addr=PIPE_IN_BASE + i, data=data)
 
-                read_data = fpga.ReadFromPipeOut(ep_addr=0xA0 + i, data=128 // 8)
+                read_data = fpga.ReadFromPipeOut(
+                    ep_addr=PIPE_OUT_BASE + i, data=PIPE_TRANSFER_BYTES
+                )
 
                 if data != read_data:
                     logger.error(f"Error at pipe {i}: expected {data}, got {read_data}")
@@ -117,20 +146,24 @@ class BIST(XEM):
 
                 pipe_progress.update(task, completed=i + 1)
 
-        console.log(f"Pipes correct: {self.pipe_correct}/32")
+        console.log(f"Pipes correct: {self.pipe_correct}/{NUM_TEST_CHANNELS}")
 
         time.sleep(1)
 
         """ BTPipe Test """
         with btpipe_progress:
-            task = btpipe_progress.add_task("Testing BTPipes", total=32)
+            task = btpipe_progress.add_task(
+                "Testing BTPipes", total=NUM_TEST_CHANNELS
+            )
 
-            for i in range(32):
-                data = token_hex(128 // 8).upper()
+            for i in range(NUM_TEST_CHANNELS):
+                data = token_hex(PIPE_TRANSFER_BYTES).upper()
 
-                fpga.WriteToBlockPipeIn(ep_addr=0x80 + i, data=data)
+                fpga.WriteToBlockPipeIn(ep_addr=PIPE_IN_BASE + i, data=data)
 
-                read_data = fpga.ReadFromBlockPipeOut(ep_addr=0xA0 + i, data=128 // 8)
+                read_data = fpga.ReadFromBlockPipeOut(
+                    ep_addr=PIPE_OUT_BASE + i, data=PIPE_TRANSFER_BYTES
+                )
 
                 if data != read_data:
                     logger.error(
@@ -141,19 +174,23 @@ class BIST(XEM):
 
                 btpipe_progress.update(task, completed=i + 1)
 
-        console.log(f"BTPipes correct: {self.btpipe_correct}/32")
+        console.log(f"BTPipes correct: {self.btpipe_correct}/{NUM_TEST_CHANNELS}")
 
         time.sleep(1)
 
         """ Trigger Test"""
         with trigger_progress:
-            task = trigger_progress.add_task("Testing Triggers", total=32)
+            task = trigger_progress.add_task(
+                "Testing Triggers", total=NUM_TEST_CHANNELS
+            )
 
-            for i in range(32):
-                fpga.ActivateTriggerIn(ep_addr=0x40 + i, bit=0)
+            for i in range(NUM_TEST_CHANNELS):
+                fpga.ActivateTriggerIn(ep_addr=TRIGGER_IN_BASE + i, bit=TRIGGER_BIT)
 
                 try:
-                    fpga.CheckTriggered(ep_addr=0x60 + i, mask=0x1)
+                    fpga.CheckTriggered(
+                        ep_addr=TRIGGER_OUT_BASE + i, mask=TRIGGER_MASK
+                    )
                 except TimeoutError:
                     logger.error(f"Trigger {i} did not fire")
                 else:
@@ -161,7 +198,7 @@ class BIST(XEM):
 
                 trigger_progress.update(task, completed=i + 1)
 
-        console.log(f"Triggers correct: {self.trigger_correct}/32\n")
+        console.log(f"Triggers correct: {self.trigger_correct}/{NUM_TEST_CHANNELS}\n")
 
         time.sleep(1)
 
@@ -176,32 +213,32 @@ class BIST(XEM):
             "Wires",
             (
                 f"[green]Passed {self.wire_correct}/32[/green]"
-                if self.wire_correct == 32
-                else f"[red]Failed {self.wire_correct}/32[/red]"
+                if self.wire_correct == NUM_TEST_CHANNELS
+                else f"[red]Failed {self.wire_correct}/{NUM_TEST_CHANNELS}[/red]"
             ),
         )
         table.add_row(
             "Pipes",
             (
                 f"[green]Passed {self.pipe_correct}/32[/green]"
-                if self.pipe_correct == 32
-                else f"[red]Failed {self.pipe_correct}/32[/red]"
+                if self.pipe_correct == NUM_TEST_CHANNELS
+                else f"[red]Failed {self.pipe_correct}/{NUM_TEST_CHANNELS}[/red]"
             ),
         )
         table.add_row(
             "BTPipes",
             (
                 f"[green]Passed {self.btpipe_correct}/32[/green]"
-                if self.btpipe_correct == 32
-                else f"[red]Failed {self.btpipe_correct}/32[/red]"
+                if self.btpipe_correct == NUM_TEST_CHANNELS
+                else f"[red]Failed {self.btpipe_correct}/{NUM_TEST_CHANNELS}[/red]"
             ),
         )
         table.add_row(
             "Triggers",
             (
                 f"[green]Passed {self.trigger_correct}/32[/green]"
-                if self.trigger_correct == 32
-                else f"[red]Failed {self.trigger_correct}/32[/red]"
+                if self.trigger_correct == NUM_TEST_CHANNELS
+                else f"[red]Failed {self.trigger_correct}/{NUM_TEST_CHANNELS}[/red]"
             ),
         )
 

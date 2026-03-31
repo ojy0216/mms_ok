@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import datetime
 import os
 import time
@@ -6,9 +8,9 @@ from abc import ABC, abstractmethod
 from typing import Optional, Type, Union
 
 import numpy as np
-import ok
 from loguru import logger
 
+from . import __version__
 from .fpga_components import (
     BlockPipeOperations,
     PipeOperations,
@@ -16,6 +18,7 @@ from .fpga_components import (
     WireOperations,
 )
 from .fpga_config import FPGAConfig
+from .ok_setup import get_ok
 from .pipeoutdata import PipeOutData
 from .validation import validate_address, validate_wire_value
 
@@ -60,7 +63,9 @@ class XEM(ABC):
         """
         self._led_used = False
         self._led_address = None
+        ok = get_ok()
         self.xem = ok.okCFrontPanel()
+        logger.info(f"Initializing mms_ok (Version: {__version__})")
 
         self._bitstream_path = os.path.abspath(bitstream_path)
         self._validate_bitstream_path()
@@ -136,6 +141,8 @@ class XEM(ABC):
         Raises:
             ConnectionError: If the device fails to open.
         """
+        ok = get_ok()
+
         if self.xem.OpenBySerial(""):
             logger.critical("Device is not opened!")
             raise ConnectionError("Device is not opened!")
@@ -330,6 +337,11 @@ class XEM(ABC):
         """
         self.auto_trigger_out = auto_update
         logger.info(f"AutoTriggerOut is {'enabled' if auto_update else 'disabled'}!")
+
+    @staticmethod
+    def reorder_hex_str(hex_str: str) -> str:
+        """Compatibility wrapper for the pipe hex reordering utility."""
+        return PipeOperations.reorder_hex_str(hex_str)
 
     def SetWireInValue(
         self,
@@ -592,7 +604,7 @@ class XEM(ABC):
         while True:
             if self.IsTriggered(ep_addr, mask, auto_update=True):
                 if self.verbose_level > 0:
-                    logger.debug(f"CheckTriggered >> Addr {hex(ep_addr)} | Mask {hex(mask)} | Triggered: {triggered}")
+                    logger.debug(f"CheckTriggered >> Addr {hex(ep_addr)} | Mask {hex(mask)} | Trigger condition met.")
                 return
             if time.perf_counter() - start_time > timeout:
                 logger.error(
@@ -613,7 +625,7 @@ class XEM(ABC):
         Returns:
             int: Error code (0 on success)
         """
-        validate_address(0, 2**32, addr)
+        validate_address(0, 2**32 - 1, addr)
         validate_wire_value(data, 32)
 
         error_code = self.xem.WriteRegister(addr, data)
@@ -631,7 +643,7 @@ class XEM(ABC):
         Returns:
             int: Value read from the register
         """
-        validate_address(0, 2**32, addr)
+        validate_address(0, 2**32 - 1, addr)
 
         value = self.xem.ReadRegister(addr)
         if self.verbose_level > 0:
@@ -665,6 +677,7 @@ class XEM7310(XEM):
             Plus all exceptions from parent class __init__
         """
         super().__init__(bitstream_path=bitstream_path)
+        ok = get_ok()
 
         target_product_id_list = [
             ok.okCFrontPanel.brdXEM7310A75,
@@ -728,6 +741,7 @@ class XEM7360(XEM):
             Plus all exceptions from parent class __init__
         """
         super().__init__(bitstream_path=bitstream_path)
+        ok = get_ok()
 
         target_product_id = ok.okCFrontPanel.brdXEM7360K160T
 
@@ -742,6 +756,7 @@ class XEM7360(XEM):
         Verifies I/O voltage settings for different banks and logs warnings
         if voltages are set below 120mV.
         """
+        ok = get_ok()
         device_settings = ok.okCDeviceSettings()
 
         ok.okCFrontPanel.GetDeviceSettings(self.xem, device_settings)
@@ -762,7 +777,7 @@ class XEM7360(XEM):
 
             vadj_mask = 0b0000_0011
             for i in range(1, 3 + 1):
-                vadj_mode = vadj_modes & vadj_mask
+                vadj_mode = (vadj_modes & vadj_mask) >> (2 * (i - 1))
                 if vadj_mode < 2:
                     logger.warning(f"vadj{i} will be set to 1.20 V!")
                     logger.warning(

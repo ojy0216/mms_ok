@@ -1,0 +1,2 @@
+[console_scripts]
+mms_ok = mms_ok.cli:main
