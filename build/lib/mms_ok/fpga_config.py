@@ -1,7 +1,13 @@
-import ok
+from __future__ import annotations
+
+from dataclasses import dataclass
+
 from loguru import logger
 
+from .ok_setup import get_ok
 
+
+@dataclass
 class FPGAConfig:
     """
     Configuration class for FPGA devices.
@@ -19,16 +25,16 @@ class FPGAConfig:
         pipe_width (int): Bit width of pipe endpoints
     """
 
-    def __init__(self):
-        """Initialize an empty configuration."""
-        self.product_name = None
-        self.serial_number = None
-        self.product_id = None
-        self.device_interface = None
-        self.device_interface_str = None
-        self.wire_width = None
-        self.trigger_width = None
-        self.pipe_width = None
+    product_name: str = ""
+    serial_number: str = ""
+    product_id: int = 0
+    device_interface: int = 0
+    device_interface_str: str = ""
+    max_bt_blocksize: int = -1
+    usb_speed: str = ""
+    wire_width: int = 0
+    trigger_width: int = 0
+    pipe_width: int = 0
 
     @classmethod
     def from_device_info(cls, device_info: ok.okTDeviceInfo) -> "FPGAConfig":
@@ -44,18 +50,18 @@ class FPGAConfig:
         interface_list = ["Unknown", "USB 2", "PCIe", "USB 3"]
         usb_speed_list = ["Unknown", "FULL", "HIGH", "SUPER"]
         bt_max_blocksize_list = [-1, 64, 1024, 16384]
-        config = cls()
-        config.product_name = device_info.productName
-        config.serial_number = device_info.serialNumber
-        config.product_id = device_info.productID
-        config.device_interface = device_info.deviceInterface
-        config.device_interface_str = interface_list[device_info.deviceInterface]
-        config.max_bt_blocksize = bt_max_blocksize_list[device_info.deviceInterface]
-        config.usb_speed = usb_speed_list[device_info.usbSpeed]
-        config.wire_width = device_info.wireWidth
-        config.trigger_width = device_info.triggerWidth
-        config.pipe_width = device_info.pipeWidth
-        return config
+        return cls(
+            product_name=device_info.productName,
+            serial_number=device_info.serialNumber,
+            product_id=device_info.productID,
+            device_interface=device_info.deviceInterface,
+            device_interface_str=interface_list[device_info.deviceInterface],
+            max_bt_blocksize=bt_max_blocksize_list[device_info.deviceInterface],
+            usb_speed=usb_speed_list[device_info.usbSpeed],
+            wire_width=device_info.wireWidth,
+            trigger_width=device_info.triggerWidth,
+            pipe_width=device_info.pipeWidth,
+        )
 
     def validate(self) -> None:
         """
@@ -64,6 +70,7 @@ class FPGAConfig:
         Checks if the device configuration meets expected requirements
         and logs warnings for any deviations.
         """
+        ok = get_ok()
         if self.device_interface != ok.OK_INTERFACE_USB3:
             logger.warning("Device interface is not USB 3!")
         if self.wire_width != 32:

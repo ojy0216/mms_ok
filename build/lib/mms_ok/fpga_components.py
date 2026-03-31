@@ -1,11 +1,30 @@
+from __future__ import annotations
+
 from typing import Optional, Union
 
 import numpy as np
-import ok
 from loguru import logger
 
+from .address import (
+    BLOCK_PIPE_IN_END,
+    BLOCK_PIPE_IN_START,
+    BLOCK_PIPE_OUT_END,
+    BLOCK_PIPE_OUT_START,
+    PIPE_IN_END,
+    PIPE_IN_START,
+    PIPE_OUT_END,
+    PIPE_OUT_START,
+    TRIGGER_IN_END,
+    TRIGGER_IN_START,
+    TRIGGER_OUT_END,
+    TRIGGER_OUT_START,
+    WIRE_IN_END,
+    WIRE_IN_START,
+    WIRE_OUT_END,
+    WIRE_OUT_START,
+)
+from .ok_setup import get_ok
 from .pipeoutdata import PipeOutData
-from .address import Address
 from .validation import validate_address, validate_block_size, validate_wire_value
 
 
@@ -47,7 +66,7 @@ class WireOperations:
         Raises:
             ValueError: If endpoint address or value is invalid
         """
-        validate_address(Address.WireInStart, Address.WireInEnd, ep_addr)
+        validate_address(WIRE_IN_START, WIRE_IN_END, ep_addr)
         validate_wire_value(value, self.wire_width)
 
         if mask is None:
@@ -65,6 +84,7 @@ class WireOperations:
 
         error_code = self.xem.SetWireInValue(ep_addr, value, mask)
         if error_code < 0:
+            ok = get_ok()
             logger.error(
                 f"SetWireInValue failed - {ok.okCFrontPanel.GetErrorString(error_code)}",
             )
@@ -82,6 +102,7 @@ class WireOperations:
         """
         error_code = self.xem.UpdateWireIns()
         if error_code < 0:
+            ok = get_ok()
             logger.error(
                 f"UpdateWireIns failed - {ok.okCFrontPanel.GetErrorString(error_code)}",
             )
@@ -98,6 +119,7 @@ class WireOperations:
         """
         error_code = self.xem.UpdateWireOuts()
         if error_code < 0:
+            ok = get_ok()
             logger.error(
                 f"UpdateWireOuts failed - {ok.okCFrontPanel.GetErrorString(error_code)}",
             )
@@ -119,7 +141,7 @@ class WireOperations:
         Note:
             update_wire_outs() must be called before this method to get current values.
         """
-        validate_address(Address.WireOutStart, Address.WireOutEnd, ep_addr)
+        validate_address(WIRE_OUT_START, WIRE_OUT_END, ep_addr)
         return self.xem.GetWireOutValue(ep_addr)
 
 
@@ -161,7 +183,7 @@ class TriggerOperations:
         Raises:
             ValueError: If endpoint address or bit position is invalid
         """
-        validate_address(Address.TriggerInStart, Address.TriggerInEnd, ep_addr)
+        validate_address(TRIGGER_IN_START, TRIGGER_IN_END, ep_addr)
 
         if not 0 <= bit < self.trigger_width:
             logger.error(
@@ -173,6 +195,7 @@ class TriggerOperations:
 
         error_code = self.xem.ActivateTriggerIn(ep_addr, bit)
         if error_code < 0:
+            ok = get_ok()
             logger.error(
                 f"ActivateTriggerIn failed - {ok.okCFrontPanel.GetErrorString(error_code)}",
             )
@@ -189,6 +212,7 @@ class TriggerOperations:
         """
         error_code = self.xem.UpdateTriggerOuts()
         if error_code < 0:
+            ok = get_ok()
             logger.error(
                 f"UpdateTriggerOuts failed - {ok.okCFrontPanel.GetErrorString(error_code)}",
             )
@@ -211,7 +235,7 @@ class TriggerOperations:
         Note:
             update_trigger_outs() must be called before this method to get current trigger states.
         """
-        validate_address(Address.TriggerOutStart, Address.TriggerOutEnd, ep_addr)
+        validate_address(TRIGGER_OUT_START, TRIGGER_OUT_END, ep_addr)
 
         if not 0 <= mask < (1 << self.trigger_width):
             hex_str_len = int(2 * (np.log2(self.trigger_width) - 1))
@@ -359,12 +383,13 @@ class PipeOperations:
         Raises:
             ValueError: If endpoint address or data format is invalid
         """
-        validate_address(Address.PipeInStart, Address.PipeInEnd, ep_addr)
+        validate_address(PIPE_IN_START, PIPE_IN_END, ep_addr)
 
         prepared_data = self._prepare_data(data, reorder_str)
 
         error_code = self.xem.WriteToPipeIn(ep_addr, prepared_data)
         if error_code < 0:
+            ok = get_ok()
             logger.error(
                 f"WriteToPipeIn failed - {ok.okCFrontPanel.GetErrorString(error_code)}",
             )
@@ -387,12 +412,13 @@ class PipeOperations:
         Raises:
             ValueError: If endpoint address or buffer format is invalid
         """
-        validate_address(Address.PipeOutStart, Address.PipeOutEnd, ep_addr)
+        validate_address(PIPE_OUT_START, PIPE_OUT_END, ep_addr)
 
         buffer = self._prepare_read_buffer(data)
 
         error_code = self.xem.ReadFromPipeOut(ep_addr, buffer)
         if error_code < 0:
+            ok = get_ok()
             logger.error(
                 f"ReadFromPipeOut failed - {ok.okCFrontPanel.GetErrorString(error_code)}",
             )
@@ -448,7 +474,7 @@ class BlockPipeOperations:
         Raises:
             ValueError: If endpoint address or data format is invalid
         """
-        validate_address(Address.BlockPipeInStart, Address.BlockPipeInEnd, ep_addr)
+        validate_address(BLOCK_PIPE_IN_START, BLOCK_PIPE_IN_END, ep_addr)
 
         prepared_data = self.pipe_ops._prepare_data(data, reorder_str)
 
@@ -463,6 +489,7 @@ class BlockPipeOperations:
 
         error_code = self.xem.WriteToBlockPipeIn(ep_addr, block_size, prepared_data)
         if error_code < 0:
+            ok = get_ok()
             logger.error(
                 f"WriteToBlockPipeIn failed - {ok.okCFrontPanel.GetErrorString(error_code)}",
             )
@@ -490,7 +517,7 @@ class BlockPipeOperations:
         Raises:
             ValueError: If endpoint address or buffer format is invalid
         """
-        validate_address(Address.BlockPipeOutStart, Address.BlockPipeOutEnd, ep_addr)
+        validate_address(BLOCK_PIPE_OUT_START, BLOCK_PIPE_OUT_END, ep_addr)
 
         buffer = self.pipe_ops._prepare_read_buffer(data)
 
@@ -505,6 +532,7 @@ class BlockPipeOperations:
 
         error_code = self.xem.ReadFromBlockPipeOut(ep_addr, block_size, buffer)
         if error_code < 0:
+            ok = get_ok()
             logger.error(
                 f"ReadFromBlockPipeOut failed - {ok.okCFrontPanel.GetErrorString(error_code)}",
             )
