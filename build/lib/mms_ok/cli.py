@@ -31,7 +31,7 @@ def _check_sdk(_args) -> int:
         print("FrontPanel SDK is not available.")
         return 1
 
-    print(f"FrontPanel SDK is available (v{__version__}).")
+    print(f"FrontPanel SDK is available.")
     return 0
 
 
