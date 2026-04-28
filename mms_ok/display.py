@@ -73,12 +73,13 @@ def _header_panel(version: str, frontpanel_version: str) -> Table:
     version_table = Table.grid(padding=(0, 2))
     version_table.add_column(style="dim", no_wrap=True, justify="left")
     version_table.add_column(no_wrap=True, justify="left")
-    for _ in range(5):
+    for _ in range(6):
         version_table.add_row("", "")
-    version_table.add_row(Text(_version_label(version), style="dim"))
     version_table.add_row(
-        "FrontPanel",
-        Text(_version_label(frontpanel_version), style="dim"),
+        Text(
+            f"{_version_label(version)} (FrontPanel {_version_label(frontpanel_version)})",
+            style="dim",
+        )
     )
     header.add_row(Text(MMS_OK_LOGO, style="bold white"), version_table)
     header.add_row("")
