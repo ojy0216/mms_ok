@@ -38,7 +38,7 @@ logger.remove()
 
 logger.add(
     sys.stderr,
-    format="[MMS OK] <green>{time:HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | {message}",
+    format="[MMS OK] <green>{time:HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <level>{message}</level>",
 )
 
 

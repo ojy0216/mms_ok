@@ -1,10 +1,11 @@
 import numpy as np
-from loguru import logger
+
+from .diagnostics import log_error
 
 
 def reorder_hex_words(hex_str: str) -> str:
     if len(hex_str) % 8 != 0:
-        logger.error("Hexadecimal string length must be a multiple of 8!")
+        log_error("Hexadecimal string length must be a multiple of 8!")
         raise ValueError("Hexadecimal string length must be a multiple of 8!")
 
     return "".join(

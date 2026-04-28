@@ -18,6 +18,7 @@ from .address import (
     WIRE_OUT_START,
 )
 from .bist_util import btpipe_progress, pipe_progress, trigger_progress, wire_progress
+from .diagnostics import log_critical, log_error
 from .fpga import XEM7310, XEM7360
 from .fpga_config import FPGAConfig
 from .ok_setup import get_ok
@@ -50,7 +51,7 @@ class BIST:
 
         bitstream_name = BIST_BITSTREAMS.get(self.config.product_name)
         if bitstream_name is None:
-            logger.critical(f"Invalid product name: {self.config.product_name}")
+            log_critical(f"Invalid product name: {self.config.product_name}")
             raise ValueError(f"Invalid product name: {self.config.product_name}")
 
         self._bitstream_path = self._resolve_bitstream_path(bitstream_name)
@@ -68,7 +69,7 @@ class BIST:
 
         try:
             if xem.OpenBySerial(""):
-                logger.critical("Device is not opened!")
+                log_critical("Device is not opened!")
                 raise ConnectionError("Device is not opened!")
 
             device_info = ok.okTDeviceInfo()
@@ -97,12 +98,12 @@ class BIST:
 
     def _validate_bitstream_path(self) -> None:
         if not os.path.isfile(self._bitstream_path):
-            logger.critical(f'"{self._bitstream_path}" is invalid!')
+            log_critical(f'"{self._bitstream_path}" is invalid!')
             raise FileNotFoundError(f"{self._bitstream_path} is an invalid bitstream!")
 
         extension = os.path.splitext(self._bitstream_path)[1]
         if extension != ".bit":
-            logger.critical(f"{extension} is not a valid bitstream file extension!")
+            log_critical(f"{extension} is not a valid bitstream file extension!")
             raise ValueError(f"{extension} is not a valid bitstream file extension!")
 
     def _create_fpga(self):
@@ -111,7 +112,7 @@ class BIST:
         if "XEM7360" in self.config.product_name:
             return XEM7360(self._bitstream_path)
 
-        logger.critical(f"Invalid product name: {self.config.product_name}")
+        log_critical(f"Invalid product name: {self.config.product_name}")
         raise ValueError(f"Invalid product name: {self.config.product_name}")
 
     def functional_test(self):
@@ -145,7 +146,7 @@ class BIST:
                 read_data = fpga.GetWireOutValue(ep_addr=WIRE_OUT_START + i)
 
                 if data != read_data:
-                    logger.error(f"Error at wire {i}: expected {data}, got {read_data}")
+                    log_error(f"Error at wire {i}: expected {data}, got {read_data}")
                 else:
                     self.wire_correct += 1
 
@@ -168,7 +169,7 @@ class BIST:
                 )
 
                 if data != read_data:
-                    logger.error(f"Error at pipe {i}: expected {data}, got {read_data}")
+                    log_error(f"Error at pipe {i}: expected {data}, got {read_data}")
                 else:
                     self.pipe_correct += 1
 
@@ -189,9 +190,7 @@ class BIST:
                 )
 
                 if data != read_data:
-                    logger.error(
-                        f"Error at BTPipe {i}: expected {data}, got {read_data}"
-                    )
+                    log_error(f"Error at BTPipe {i}: expected {data}, got {read_data}")
                 else:
                     self.btpipe_correct += 1
 
@@ -213,7 +212,7 @@ class BIST:
                         ep_addr=TRIGGER_OUT_START + i, mask=TRIGGER_MASK
                     )
                 except TimeoutError:
-                    logger.error(f"Trigger {i} did not fire")
+                    log_error(f"Trigger {i} did not fire")
                 else:
                     self.trigger_correct += 1
 

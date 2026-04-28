@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Optional, Union
 
 import numpy as np
-from loguru import logger
 
 from .address import (
     BLOCK_PIPE_IN_END,
@@ -23,6 +22,7 @@ from .address import (
     WIRE_OUT_END,
     WIRE_OUT_START,
 )
+from .diagnostics import log_error
 from .ok_setup import get_ok
 from .pipeoutdata import PipeOutData, reorder_hex_words
 from .validation import validate_address, validate_block_size, validate_wire_value
@@ -75,17 +75,17 @@ class WireOperations:
         else:
             if not 0 <= mask < (1 << self.wire_width):
                 hex_str_len = int(2 * (np.log2(self.wire_width) - 1))
-                logger.error(
-                    f"Invalid mask (0x{mask:0_X})! It should be in 0x{0:0{hex_str_len}_X} ~ 0x{((1 << self.wire_width) - 1):0{hex_str_len}_X}",
+                message = (
+                    f"Invalid mask (0x{mask:0_X})! It should be in "
+                    f"0x{0:0{hex_str_len}_X} ~ 0x{((1 << self.wire_width) - 1):0{hex_str_len}_X}"
                 )
-                raise ValueError(
-                    f"Invalid mask (0x{mask:0_X})! It should be in 0x{0:0{hex_str_len}_X} ~ 0x{((1 << self.wire_width) - 1):0{hex_str_len}_X}"
-                )
+                log_error(message)
+                raise ValueError(message)
 
         error_code = self.xem.SetWireInValue(ep_addr, value, mask)
         if error_code < 0:
             ok = get_ok()
-            logger.error(
+            log_error(
                 f"SetWireInValue failed - {ok.okCFrontPanel.GetErrorString(error_code)}",
             )
         return error_code
@@ -103,7 +103,7 @@ class WireOperations:
         error_code = self.xem.UpdateWireIns()
         if error_code < 0:
             ok = get_ok()
-            logger.error(
+            log_error(
                 f"UpdateWireIns failed - {ok.okCFrontPanel.GetErrorString(error_code)}",
             )
         return error_code
@@ -120,7 +120,7 @@ class WireOperations:
         error_code = self.xem.UpdateWireOuts()
         if error_code < 0:
             ok = get_ok()
-            logger.error(
+            log_error(
                 f"UpdateWireOuts failed - {ok.okCFrontPanel.GetErrorString(error_code)}",
             )
         return error_code
@@ -186,17 +186,14 @@ class TriggerOperations:
         validate_address(TRIGGER_IN_START, TRIGGER_IN_END, ep_addr)
 
         if not 0 <= bit < self.trigger_width:
-            logger.error(
-                f"Invalid bit! It should be in 0 ~ {self.trigger_width - 1}",
-            )
-            raise ValueError(
-                f"Invalid bit! It should be in 0 ~ {self.trigger_width - 1}"
-            )
+            message = f"Invalid bit! It should be in 0 ~ {self.trigger_width - 1}"
+            log_error(message)
+            raise ValueError(message)
 
         error_code = self.xem.ActivateTriggerIn(ep_addr, bit)
         if error_code < 0:
             ok = get_ok()
-            logger.error(
+            log_error(
                 f"ActivateTriggerIn failed - {ok.okCFrontPanel.GetErrorString(error_code)}",
             )
         return error_code
@@ -213,7 +210,7 @@ class TriggerOperations:
         error_code = self.xem.UpdateTriggerOuts()
         if error_code < 0:
             ok = get_ok()
-            logger.error(
+            log_error(
                 f"UpdateTriggerOuts failed - {ok.okCFrontPanel.GetErrorString(error_code)}",
             )
         return error_code
@@ -239,12 +236,12 @@ class TriggerOperations:
 
         if not 0 <= mask < (1 << self.trigger_width):
             hex_str_len = int(2 * (np.log2(self.trigger_width) - 1))
-            logger.error(
-                f"Invalid mask (0x{mask:0_X})! It should be in 0x{0:0{hex_str_len}_X} ~ 0x{((1 << self.trigger_width) - 1):0{hex_str_len}_X}",
+            message = (
+                f"Invalid mask (0x{mask:0_X})! It should be in "
+                f"0x{0:0{hex_str_len}_X} ~ 0x{((1 << self.trigger_width) - 1):0{hex_str_len}_X}"
             )
-            raise ValueError(
-                f"Invalid mask (0x{mask:0_X})! It should be in 0x{0:0{hex_str_len}_X} ~ 0x{((1 << self.trigger_width) - 1):0{hex_str_len}_X}"
-            )
+            log_error(message)
+            raise ValueError(message)
 
         return self.xem.IsTriggered(ep_addr, mask)
 
@@ -316,7 +313,7 @@ class PipeOperations:
             raise TypeError("Data must be a string, bytearray, or numpy array")
 
         if len(data) % 16 != 0:
-            logger.error("Block size must be a multiple of 16 bytes")
+            log_error("Block size must be a multiple of 16 bytes")
             raise ValueError("Block size must be a multiple of 16 bytes")
 
         return data
@@ -337,12 +334,12 @@ class PipeOperations:
         """
         if isinstance(data, int):
             if data % 16 != 0:
-                logger.error("Block size must be a multiple of 16 bytes")
+                log_error("Block size must be a multiple of 16 bytes")
                 raise ValueError("Block size must be a multiple of 16 bytes")
             return bytearray(data)
         elif isinstance(data, bytearray):
             if len(data) % 16 != 0:
-                logger.error("Block size must be a multiple of 16 bytes")
+                log_error("Block size must be a multiple of 16 bytes")
                 raise ValueError("Block size must be a multiple of 16 bytes")
             return data
         else:
@@ -375,7 +372,7 @@ class PipeOperations:
         error_code = self.xem.WriteToPipeIn(ep_addr, prepared_data)
         if error_code < 0:
             ok = get_ok()
-            logger.error(
+            log_error(
                 f"WriteToPipeIn failed - {ok.okCFrontPanel.GetErrorString(error_code)}",
             )
         return error_code
@@ -404,7 +401,7 @@ class PipeOperations:
         error_code = self.xem.ReadFromPipeOut(ep_addr, buffer)
         if error_code < 0:
             ok = get_ok()
-            logger.error(
+            log_error(
                 f"ReadFromPipeOut failed - {ok.okCFrontPanel.GetErrorString(error_code)}",
             )
 
@@ -473,7 +470,7 @@ class BlockPipeOperations:
         error_code = self.xem.WriteToBlockPipeIn(ep_addr, block_size, prepared_data)
         if error_code < 0:
             ok = get_ok()
-            logger.error(
+            log_error(
                 f"WriteToBlockPipeIn failed - {ok.okCFrontPanel.GetErrorString(error_code)}",
             )
         return error_code
@@ -516,7 +513,7 @@ class BlockPipeOperations:
         error_code = self.xem.ReadFromBlockPipeOut(ep_addr, block_size, buffer)
         if error_code < 0:
             ok = get_ok()
-            logger.error(
+            log_error(
                 f"ReadFromBlockPipeOut failed - {ok.okCFrontPanel.GetErrorString(error_code)}",
             )
 

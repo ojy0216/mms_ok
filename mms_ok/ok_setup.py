@@ -5,6 +5,8 @@ import sys
 
 from loguru import logger
 
+from .diagnostics import log_critical
+
 DEFAULT_FRONTPANEL_DIR = r"C:\Program Files\Opal Kelly\FrontPanelUSB"
 DEFAULT_LIB_DIR = os.path.expanduser("~/mms_ok")
 _ok_module = None
@@ -59,7 +61,7 @@ def import_ok():
             except ImportError:
                 pass
 
-    logger.critical("Please manually setup FrontPanel SDK!")
+    log_critical("Please manually setup FrontPanel SDK!")
     raise ImportError("Import ok failed")
 
 

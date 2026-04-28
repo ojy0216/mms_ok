@@ -10,6 +10,7 @@ import numpy as np
 from loguru import logger
 
 from . import __version__
+from .diagnostics import log_critical, log_error
 from .display import print_fpga_overview
 from .fpga_components import (
     BlockPipeOperations,
@@ -113,12 +114,12 @@ class XEM(ABC):
             ValueError: If the bitstream file extension is not ".bit".
         """
         if not os.path.isfile(self._bitstream_path):
-            logger.critical(f'"{self._bitstream_path}" is invalid!')
+            log_critical(f'"{self._bitstream_path}" is invalid!')
             raise FileNotFoundError(f"{self._bitstream_path} is an invalid bitstream!")
 
         extension = os.path.splitext(self._bitstream_path)[1]
         if extension != ".bit":
-            logger.critical(f"{extension} is not a valid bitstream file extension!")
+            log_critical(f"{extension} is not a valid bitstream file extension!")
             raise ValueError(f"{extension} is not a valid bitstream file extension!")
 
         self._bitstream_timestamp = os.path.getmtime(self._bitstream_path)
@@ -139,7 +140,7 @@ class XEM(ABC):
         ok = get_ok()
 
         if self.xem.OpenBySerial(""):
-            logger.critical("Device is not opened!")
+            log_critical("Device is not opened!")
             raise ConnectionError("Device is not opened!")
 
         device_info = ok.okTDeviceInfo()
@@ -164,15 +165,14 @@ class XEM(ABC):
         error_code = self.xem.ConfigureFPGA(self._bitstream_path)
         bitstream_name = os.path.basename(self._bitstream_path)
         if error_code != 0:
-            logger.critical(
-                f'Input bitstream file: "{bitstream_name}" is not connected to the device!',
-            )
-            raise RuntimeError(
+            message = (
                 f'Input bitstream file: "{bitstream_name}" is not connected to the device!'
             )
+            log_critical(message)
+            raise RuntimeError(message)
 
         if not self.xem.IsFrontPanelEnabled():
-            logger.critical("FrontPanel is not enabled!")
+            log_critical("FrontPanel is not enabled!")
             raise RuntimeError("FrontPanel is not enabled!")
 
     @abstractmethod
@@ -604,7 +604,7 @@ class XEM(ABC):
                     )
                 return
             if time.perf_counter() - start_time > timeout:
-                logger.error(
+                log_error(
                     f"Trigger ({hex(ep_addr)}) condition not met within {timeout}s",
                 )
                 raise TimeoutError(
@@ -682,7 +682,7 @@ class XEM7310(XEM):
         ]
 
         if self.config.product_id not in target_product_id_list:
-            logger.critical("Connected FPGA board is not a XEM7310A75/A100!")
+            log_critical("Connected FPGA board is not a XEM7310A75/A100!")
             raise TypeError("Connected FPGA board is not a XEM7310A75/A100!")
 
     def _check_device_settings(self) -> None:
@@ -743,7 +743,7 @@ class XEM7360(XEM):
         target_product_id = ok.okCFrontPanel.brdXEM7360K160T
 
         if self.config.product_id != target_product_id:
-            logger.critical("Connected FPGA board is not a XEM7360K160T!")
+            log_critical("Connected FPGA board is not a XEM7360K160T!")
             raise TypeError("Connected FPGA board is not a XEM7360K160T!")
 
     def _check_device_settings(self) -> None:
