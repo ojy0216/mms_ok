@@ -4,7 +4,7 @@ import argparse
 from typing import Optional, Sequence
 
 from . import __version__
-from .ok_setup import copy_frontpanel_files, import_ok
+from .ok_setup import copy_frontpanel_files, get_frontpanel_version, import_ok
 
 
 def _run_bist(_args) -> int:
@@ -16,6 +16,12 @@ def _run_bist(_args) -> int:
 
 def _setup_frontpanel(_args) -> int:
     target_dir = copy_frontpanel_files()
+    message = (
+        f"FrontPanel files copied to: {target_dir}"
+        if target_dir
+        else "FrontPanel setup failed."
+    )
+    print(message)
     return 0 if target_dir is not None else 1
 
 
@@ -26,12 +32,13 @@ def _show_version(_args) -> int:
 
 def _check_sdk(_args) -> int:
     try:
-        import_ok()
+        ok = import_ok()
     except ImportError:
         print("FrontPanel SDK is not available.")
         return 1
 
     print(f"FrontPanel SDK is available.")
+    print(f"FrontPanel SDK version: {get_frontpanel_version(ok)}")
     return 0
 
 

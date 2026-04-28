@@ -5,6 +5,8 @@ import sys
 
 from loguru import logger
 
+from .diagnostics import log_critical
+
 DEFAULT_FRONTPANEL_DIR = r"C:\Program Files\Opal Kelly\FrontPanelUSB"
 DEFAULT_LIB_DIR = os.path.expanduser("~/mms_ok")
 _ok_module = None
@@ -30,11 +32,6 @@ def copy_frontpanel_files(
     os.makedirs(lib_dir, exist_ok=True)
 
     try:
-        with open(os.path.join(frontpanel_dir, "ReleaseNotes.txt"), "r") as release_file:
-            line = release_file.readline().strip()
-            _, version, *_ = line.split()
-            logger.info(f"FrontPanel SDK Version: {version}")
-
         files = [
             os.path.join(frontpanel_dir, "API/Python/x64/ok.py"),
             os.path.join(frontpanel_dir, "API/Python/x64/_ok.pyd"),
@@ -45,7 +42,6 @@ def copy_frontpanel_files(
             shutil.copy(src=file, dst=lib_dir)
 
         _append_sys_path(lib_dir)
-        logger.info("FrontPanel API ready")
         return lib_dir
     except FileNotFoundError:
         logger.warning("FrontPanel SDK files not found!")
@@ -65,7 +61,7 @@ def import_ok():
             except ImportError:
                 pass
 
-    logger.critical("Please manually setup FrontPanel SDK!")
+    log_critical("Please manually setup FrontPanel SDK!")
     raise ImportError("Import ok failed")
 
 
@@ -76,3 +72,28 @@ def get_ok():
         _ok_module = import_ok()
 
     return _ok_module
+
+
+def get_frontpanel_version(ok_module=None) -> str:
+    ok = ok_module or get_ok()
+
+    for owner in (ok, getattr(ok, "okCFrontPanel", None)):
+        if owner is None:
+            continue
+
+        get_version_string = getattr(owner, "GetAPIVersionString", None)
+        if get_version_string is not None:
+            try:
+                version = get_version_string()
+                return version.decode() if isinstance(version, bytes) else str(version)
+            except Exception:
+                pass
+
+    try:
+        return "{}.{}.{}".format(
+            ok.GetAPIVersionMajor(),
+            ok.GetAPIVersionMinor(),
+            ok.GetAPIVersionMicro(),
+        )
+    except Exception:
+        return "unknown"
