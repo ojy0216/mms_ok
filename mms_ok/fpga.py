@@ -344,7 +344,10 @@ class XEM(ABC):
         """
         error_code = self.wire_ops.set_wire_in(ep_addr, value, mask)
         if self.verbose_level > 0:
-            logger.debug(f"SetWireInValue >> Addr: {hex(ep_addr)} | Value: {value} | Mask: {hex(mask) if mask is not None else 'None'}")
+            mask_text = hex(mask) if mask is not None else "None"
+            logger.debug(
+                f"SetWireInValue >> Addr: {hex(ep_addr)} | Value: {value} | Mask: {mask_text}"
+            )
         if self.auto_wire_in or auto_update:
             self.UpdateWireIns()
         return error_code
@@ -360,7 +363,7 @@ class XEM(ABC):
             int: Error code (0 on success)
         """
         if self.verbose_level > 0:
-            logger.debug(f"UpdateWireIns >> Updating all wire-in endpoints.")
+            logger.debug("UpdateWireIns >> Updating all wire-in endpoints.")
         return self.wire_ops.update_wire_ins()
 
     def UpdateWireOuts(self) -> int:
@@ -373,7 +376,7 @@ class XEM(ABC):
             int: Error code (0 on success)
         """
         if self.verbose_level > 0:
-            logger.debug(f"UpdateWireOuts >> Updating all wire-out endpoints.")
+            logger.debug("UpdateWireOuts >> Updating all wire-out endpoints.")
         return self.wire_ops.update_wire_outs()
 
     def GetWireOutValue(self, ep_addr: int, auto_update: bool = False) -> int:
@@ -421,7 +424,9 @@ class XEM(ABC):
         """
         written = self.pipe_ops.write_to_pipe_in(ep_addr, data, reorder_str)
         if self.verbose_level > 0:
-            logger.debug(f"WriteToPipeIn >> Addr {hex(ep_addr)} | Wrote: {written} bytes")
+            logger.debug(
+                f"WriteToPipeIn >> Addr {hex(ep_addr)} | Wrote: {written} bytes"
+            )
         return written
 
     def ReadFromPipeOut(
@@ -445,7 +450,9 @@ class XEM(ABC):
         """
         result = self.pipe_ops.read_from_pipe_out(ep_addr, data, reorder_str)
         if self.verbose_level > 0:
-            logger.debug(f"ReadFromPipeOut >>  Addr {hex(ep_addr)} | Read: {result.error_code} bytes")
+            logger.debug(
+                f"ReadFromPipeOut >>  Addr {hex(ep_addr)} | Read: {result.error_code} bytes"
+            )
         return result
 
     def WriteToBlockPipeIn(
@@ -477,7 +484,9 @@ class XEM(ABC):
             ep_addr, data, block_size, reorder_str=reorder_str
         )
         if self.verbose_level > 0:
-            logger.debug(f"WriteToBlockPipeIn >> Addr {hex(ep_addr)} | Wrote: {written} bytes")
+            logger.debug(
+                f"WriteToBlockPipeIn >> Addr {hex(ep_addr)} | Wrote: {written} bytes"
+            )
         return written
 
     def ReadFromBlockPipeOut(
@@ -509,7 +518,9 @@ class XEM(ABC):
             ep_addr, data, block_size, reorder_str
         )
         if self.verbose_level > 0:
-            logger.debug(f"ReadFromBlockPipeOut >> Addr {hex(ep_addr)} | Read: {result.error_code} bytes")
+            logger.debug(
+                f"ReadFromBlockPipeOut >> Addr {hex(ep_addr)} | Read: {result.error_code} bytes"
+            )
         return result
 
     def ActivateTriggerIn(self, ep_addr: int, bit: int) -> int:
@@ -530,7 +541,9 @@ class XEM(ABC):
         """
         error_code = self.trigger_ops.activate_trigger_in(ep_addr, bit)
         if self.verbose_level > 0:
-            logger.debug(f"ActivateTriggerIn >> Addr {hex(ep_addr)} | Bit {bit} activated.")
+            logger.debug(
+                f"ActivateTriggerIn >> Addr {hex(ep_addr)} | Bit {bit} activated."
+            )
         return error_code
 
     def UpdateTriggerOuts(self) -> int:
@@ -543,7 +556,7 @@ class XEM(ABC):
             int: Error code (0 on success)
         """
         if self.verbose_level > 0:
-            logger.debug(f"UpdateTriggerOuts >> Updating all trigger-out endpoints.")
+            logger.debug("UpdateTriggerOuts >> Updating all trigger-out endpoints.")
         return self.trigger_ops.update_trigger_outs()
 
     def IsTriggered(self, ep_addr: int, mask: int, auto_update: bool = False) -> bool:
@@ -565,7 +578,9 @@ class XEM(ABC):
             self.UpdateTriggerOuts()
         triggered = self.trigger_ops.is_triggered(ep_addr, mask)
         if self.verbose_level > 0:
-            logger.debug(f"IsTriggered >> Addr {hex(ep_addr)} | Mask {hex(mask)} | Triggered: {triggered}")
+            logger.debug(
+                f"IsTriggered >> Addr {hex(ep_addr)} | Mask {hex(mask)} | Triggered: {triggered}"
+            )
         return triggered
 
     def CheckTriggered(self, ep_addr: int, mask: int, timeout: float = 1.0):
@@ -584,7 +599,9 @@ class XEM(ABC):
         while True:
             if self.IsTriggered(ep_addr, mask, auto_update=True):
                 if self.verbose_level > 0:
-                    logger.debug(f"CheckTriggered >> Addr {hex(ep_addr)} | Mask {hex(mask)} | Trigger condition met.")
+                    logger.debug(
+                        f"CheckTriggered >> Addr {hex(ep_addr)} | Mask {hex(mask)} | Trigger condition met."
+                    )
                 return
             if time.perf_counter() - start_time > timeout:
                 logger.error(

@@ -1,4 +1,3 @@
-from bitslice import Bitslice
 from rich.progress import (
     BarColumn,
     MofNCompleteColumn,
@@ -7,30 +6,17 @@ from rich.progress import (
     TimeRemainingColumn,
 )
 
-wire_progress = Progress(
-    TextColumn("[progress.description]{task.description}"),
-    BarColumn(),
-    MofNCompleteColumn(),
-    TimeRemainingColumn(),
-)
 
-pipe_progress = Progress(
-    TextColumn("[progress.description]{task.description}"),
-    BarColumn(),
-    MofNCompleteColumn(),
-    TimeRemainingColumn(),
-)
+def _make_progress() -> Progress:
+    return Progress(
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TimeRemainingColumn(),
+    )
 
-btpipe_progress = Progress(
-    TextColumn("[progress.description]{task.description}"),
-    BarColumn(),
-    MofNCompleteColumn(),
-    TimeRemainingColumn(),
-)
 
-trigger_progress = Progress(
-    TextColumn("[progress.description]{task.description}"),
-    BarColumn(),
-    MofNCompleteColumn(),
-    TimeRemainingColumn(),
-)
+wire_progress = _make_progress()
+pipe_progress = _make_progress()
+btpipe_progress = _make_progress()
+trigger_progress = _make_progress()

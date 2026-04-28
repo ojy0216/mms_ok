@@ -4,15 +4,22 @@ The package keeps imports lightweight: FrontPanel setup is only attempted when
 hardware-backed classes are actually accessed.
 """
 
-from pkg_resources import DistributionNotFound, get_distribution
+try:
+    from importlib.metadata import PackageNotFoundError, version as _metadata_version
+except ImportError:  # pragma: no cover - Python 3.7 fallback
+    from pkg_resources import DistributionNotFound as PackageNotFoundError
+    from pkg_resources import get_distribution
+
+    def _metadata_version(package_name: str) -> str:
+        return get_distribution(package_name).version
 
 from .ok_setup import copy_frontpanel_files
 
 setup_frontpanel = copy_frontpanel_files
 
 try:
-    __version__ = get_distribution("mms_ok").version
-except DistributionNotFound:
+    __version__ = _metadata_version("mms_ok")
+except PackageNotFoundError:
     __version__ = "0+unknown"
 
 __all__ = [
@@ -24,15 +31,15 @@ __all__ = [
     "setup_frontpanel",
 ]
 
-# import sys
-# from loguru import logger
+import sys
+from loguru import logger
 
-# logger.remove()
+logger.remove()
 
-# logger.add(
-#     sys.stderr,
-#     format="[MMS OK] <green>{time:HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | {message}",
-# )
+logger.add(
+    sys.stderr,
+    format="[MMS OK] <green>{time:HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | {message}",
+)
 
 
 def __getattr__(name):

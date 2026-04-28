@@ -2,6 +2,20 @@ import numpy as np
 from loguru import logger
 
 
+def reorder_hex_words(hex_str: str) -> str:
+    if len(hex_str) % 8 != 0:
+        logger.error("Hexadecimal string length must be a multiple of 8!")
+        raise ValueError("Hexadecimal string length must be a multiple of 8!")
+
+    return "".join(
+        hex_str[i + 6 : i + 8]
+        + hex_str[i + 4 : i + 6]
+        + hex_str[i + 2 : i + 4]
+        + hex_str[i : i + 2]
+        for i in range(0, len(hex_str), 8)
+    )
+
+
 class PipeOutData:
     """
     Represents data received from a pipe out interface.
@@ -33,27 +47,8 @@ class PipeOutData:
         self.__error_code = error_code
         self.__raw_data = raw_data
 
-        # Generate hex string representation
         hex_str = raw_data.hex().upper()
-
-        # Reorder if requested
-        if reorder_str:
-            # Reorder the hexadecimal string by swapping the positions of every 2 characters
-            if len(hex_str) % 8 != 0:
-                logger.error("Hexadecimal string length must be a multiple of 8!")
-                raise ValueError("Hexadecimal string length must be a multiple of 8!")
-
-            self.__hex_data = "".join(
-                [
-                    hex_str[i + 6 : i + 8]
-                    + hex_str[i + 4 : i + 6]
-                    + hex_str[i + 2 : i + 4]
-                    + hex_str[i : i + 2]
-                    for i in range(0, len(hex_str), 8)
-                ]
-            )
-        else:
-            self.__hex_data = hex_str
+        self.__hex_data = reorder_hex_words(hex_str) if reorder_str else hex_str
 
     @property
     def error_code(self) -> int:

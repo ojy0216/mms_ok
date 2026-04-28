@@ -24,7 +24,7 @@ from .address import (
     WIRE_OUT_START,
 )
 from .ok_setup import get_ok
-from .pipeoutdata import PipeOutData
+from .pipeoutdata import PipeOutData, reorder_hex_words
 from .validation import validate_address, validate_block_size, validate_wire_value
 
 
@@ -286,21 +286,7 @@ class PipeOperations:
             Input: "AB_CD_EF_GH"
             Output: "GH_EF_CD_AB"
         """
-        if len(hex_str) % 8 != 0:
-            logger.error(
-                f"Hexadecimal string length must be a multiple of 8!",
-            )
-            raise ValueError("Hexadecimal string length must be a multiple of 8!")
-
-        return "".join(
-            [
-                hex_str[i + 6 : i + 8]
-                + hex_str[i + 4 : i + 6]
-                + hex_str[i + 2 : i + 4]
-                + hex_str[i : i + 2]
-                for i in range(0, len(hex_str), 8)
-            ]
-        )
+        return reorder_hex_words(hex_str)
 
     def _prepare_data(
         self, data: Union[str, bytearray, np.ndarray], reorder_str: bool
@@ -325,7 +311,6 @@ class PipeOperations:
             else:
                 data = bytearray.fromhex(data)
         elif isinstance(data, np.ndarray):
-            # data = data.tobytes()
             data = bytearray(data)
         elif not isinstance(data, bytearray):
             raise TypeError("Data must be a string, bytearray, or numpy array")
@@ -423,11 +408,9 @@ class PipeOperations:
                 f"ReadFromPipeOut failed - {ok.okCFrontPanel.GetErrorString(error_code)}",
             )
 
-        # Create PipeOutData with raw buffer and reorder flag
-        read_data = PipeOutData(
+        return PipeOutData(
             error_code=error_code, raw_data=buffer, reorder_str=reorder_str
         )
-        return read_data
 
 
 class BlockPipeOperations:
@@ -537,8 +520,6 @@ class BlockPipeOperations:
                 f"ReadFromBlockPipeOut failed - {ok.okCFrontPanel.GetErrorString(error_code)}",
             )
 
-        # Create PipeOutData with raw buffer and reorder flag
-        read_data = PipeOutData(
+        return PipeOutData(
             error_code=error_code, raw_data=buffer, reorder_str=reorder_str
         )
-        return read_data

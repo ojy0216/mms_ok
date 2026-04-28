@@ -16,7 +16,12 @@ def _run_bist(_args) -> int:
 
 def _setup_frontpanel(_args) -> int:
     target_dir = copy_frontpanel_files()
-    print(f"FrontPanel files copied to: {target_dir}" if target_dir else "FrontPanel setup failed.")
+    message = (
+        f"FrontPanel files copied to: {target_dir}"
+        if target_dir
+        else "FrontPanel setup failed."
+    )
+    print(message)
     return 0 if target_dir is not None else 1
 
 

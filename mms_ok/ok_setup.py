@@ -30,11 +30,6 @@ def copy_frontpanel_files(
     os.makedirs(lib_dir, exist_ok=True)
 
     try:
-        with open(os.path.join(frontpanel_dir, "ReleaseNotes.txt"), "r") as release_file:
-            line = release_file.readline().strip()
-            _, version, *_ = line.split()
-            # logger.info(f"FrontPanel SDK Version: {version}")
-
         files = [
             os.path.join(frontpanel_dir, "API/Python/x64/ok.py"),
             os.path.join(frontpanel_dir, "API/Python/x64/_ok.pyd"),
@@ -45,7 +40,6 @@ def copy_frontpanel_files(
             shutil.copy(src=file, dst=lib_dir)
 
         _append_sys_path(lib_dir)
-        # logger.info("FrontPanel API ready")
         return lib_dir
     except FileNotFoundError:
         logger.warning("FrontPanel SDK files not found!")

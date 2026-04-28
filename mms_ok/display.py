@@ -24,13 +24,6 @@ MMS_OK_LOGO = r"""
 ██║ ╚═╝ ██║██║ ╚═╝ ██║███████║    ╚██████╔╝██║  ██╗
 ╚═╝     ╚═╝╚═╝     ╚═╝╚══════╝     ╚═════╝ ╚═╝  ╚═╝"""
 
-# MMS_OK_LOGO = r"""
-# ███    ███ ███    ███ ███████      ██████  ██   ██ 
-# ████  ████ ████  ████ ██          ██    ██ ██  ██  
-# ██ ████ ██ ██ ████ ██ ███████     ██    ██ █████   
-# ██  ██  ██ ██  ██  ██      ██     ██    ██ ██  ██  
-# ██      ██ ██      ██ ███████      ██████  ██   ██ """
-
 
 def _kv_table(rows: Iterable[Tuple[str, object]]) -> Table:
     table = Table.grid(padding=(0, 2))
@@ -43,7 +36,7 @@ def _kv_table(rows: Iterable[Tuple[str, object]]) -> Table:
     return table
 
 
-def _make_panel(title: str, body, border_style: str = "cyan") -> Panel:
+def _make_panel(title: str, body) -> Panel:
     title_text = Text(title, style=PANEL_TITLE_STYLE) if title else ""
     return Panel(
         body,
@@ -55,8 +48,8 @@ def _make_panel(title: str, body, border_style: str = "cyan") -> Panel:
     )
 
 
-def _panel(title: str, body, border_style: str = "cyan") -> None:
-    console.print(_make_panel(title, body, border_style))
+def _panel(title: str, body) -> None:
+    console.print(_make_panel(title, body))
 
 
 def _version_label(version: str) -> str:
@@ -92,11 +85,10 @@ def _bitstream_panel(bitstream_path: str, timestamp: float) -> Panel:
         [
             ("File", Text(os.path.basename(bitstream_path), style="bold white")),
             ("Updated", Text(updated_at, style="white")),
-            # ("Path", Text(bitstream_path, style="dim")),
             ("Path", Text(bitstream_path, style="white")),
         ]
     )
-    return _make_panel("Bitstream", body, "magenta")
+    return _make_panel("Bitstream", body)
 
 
 def _device_panel(config, vadj_voltage_dict=None) -> Panel:
@@ -121,10 +113,6 @@ def _device_panel(config, vadj_voltage_dict=None) -> Panel:
     layout.add_column(ratio=1)
     layout.add_column(ratio=1)
 
-    headers = [
-        Text("[Board]", style="bold white"),
-        Text("[Data Path]", style="bold white"),
-    ]
     tables = [board_table, capability_table]
 
     if vadj_voltage_dict:
@@ -137,13 +125,11 @@ def _device_panel(config, vadj_voltage_dict=None) -> Panel:
             ]
         )
         layout.add_column(ratio=1)
-        headers.append(Text("[I/O Voltage]", style="bold white"))
         tables.append(voltage_table)
 
-    # layout.add_row(*headers)
     layout.add_row(*tables)
 
-    return _make_panel("Device", layout, "blue")
+    return _make_panel("Device", layout)
 
 
 def print_fpga_overview(
@@ -161,4 +147,4 @@ def print_fpga_overview(
     layout.add_row(_bitstream_panel(bitstream_path, bitstream_timestamp))
     layout.add_row(_device_panel(config, vadj_voltage_dict))
 
-    _panel("", layout, "cyan")
+    _panel("", layout)

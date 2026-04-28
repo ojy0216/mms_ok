@@ -35,4 +35,5 @@ mms_ok = "mms_ok.cli:main"
 mms_ok = ["bitstreams/*.bit"]
 
 [tool.setuptools.packages.find]
-exclude = ["tests", "tests.*"]
+include = ["mms_ok", "mms_ok.*"]
+exclude = ["tests", "tests.*", "build", "build.*", "dist", "dist.*"]
