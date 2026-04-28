@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import datetime
 import os
 import time
 import types
@@ -11,6 +10,7 @@ import numpy as np
 from loguru import logger
 
 from . import __version__
+from .display import print_fpga_overview
 from .fpga_components import (
     BlockPipeOperations,
     PipeOperations,
@@ -18,7 +18,7 @@ from .fpga_components import (
     WireOperations,
 )
 from .fpga_config import FPGAConfig
-from .ok_setup import get_ok
+from .ok_setup import get_frontpanel_version, get_ok
 from .pipeoutdata import PipeOutData
 from .validation import validate_address, validate_wire_value
 
@@ -65,7 +65,7 @@ class XEM(ABC):
         self._led_address = None
         ok = get_ok()
         self.xem = ok.okCFrontPanel()
-        logger.info(f"Initializing mms_ok (Version: {__version__})")
+        self._frontpanel_version = get_frontpanel_version(ok)
 
         self._bitstream_path = os.path.abspath(bitstream_path)
         self._validate_bitstream_path()
@@ -89,14 +89,14 @@ class XEM(ABC):
 
         self._check_device_settings()
 
-        logger.info(f"AutoWireIn is {'enabled' if self.auto_wire_in else 'disabled'}!")
-        logger.info(
-            f"AutoWireOut is {'enabled' if self.auto_wire_out else 'disabled'}!"
+        print_fpga_overview(
+            version=__version__,
+            frontpanel_version=self._frontpanel_version,
+            bitstream_path=self._bitstream_path,
+            bitstream_timestamp=self._bitstream_timestamp,
+            config=self.config,
+            vadj_voltage_dict=getattr(self, "_vadj_voltage_dict", None),
         )
-        logger.info(
-            f"AutoTriggerOut is {'enabled' if self.auto_trigger_out else 'disabled'}!"
-        )
-        logger.info("FPGA initialized!\n")
     
     def _validate_bitstream_path(self) -> None:
         """
@@ -121,12 +121,7 @@ class XEM(ABC):
             logger.critical(f"{extension} is not a valid bitstream file extension!")
             raise ValueError(f"{extension} is not a valid bitstream file extension!")
 
-        logger.info(f"Bitstream file: {self._bitstream_path}")
-
-        timestamp = os.path.getmtime(self._bitstream_path)
-        logger.info(
-            f"Bitstream date: {datetime.datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')}",
-        )
+        self._bitstream_timestamp = os.path.getmtime(self._bitstream_path)
 
     def _connect(self) -> None:
         """
@@ -153,15 +148,6 @@ class XEM(ABC):
         self.config = FPGAConfig.from_device_info(device_info)
         self.config.validate()
 
-        logger.info(f"Model        : {self.config.product_name}")
-        logger.info(f"Serial Number: {self.config.serial_number}")
-        logger.info(f"Interface    : {self.config.device_interface_str}")
-        logger.info(f"USB Speed    : {self.config.usb_speed}")
-        logger.info(f"Max Blocksize: {self.config.max_bt_blocksize}")
-        logger.info(f"Wire Width   : {self.config.wire_width}")
-        logger.info(f"Trigger Width: {self.config.trigger_width}")
-        logger.info(f"Pipe Width   : {self.config.pipe_width}")
-
     def _configure(self) -> None:
         """
         Configures the FPGA with the specified bitstream file.
@@ -177,11 +163,7 @@ class XEM(ABC):
         """
         error_code = self.xem.ConfigureFPGA(self._bitstream_path)
         bitstream_name = os.path.basename(self._bitstream_path)
-        if error_code == 0:
-            logger.info(
-                f'Input bitstream file: "{bitstream_name}" is connected to the device!',
-            )
-        else:
+        if error_code != 0:
             logger.critical(
                 f'Input bitstream file: "{bitstream_name}" is not connected to the device!',
             )
@@ -189,9 +171,7 @@ class XEM(ABC):
                 f'Input bitstream file: "{bitstream_name}" is not connected to the device!'
             )
 
-        if self.xem.IsFrontPanelEnabled():
-            logger.info("FrontPanel is enabled!")
-        else:
+        if not self.xem.IsFrontPanelEnabled():
             logger.critical("FrontPanel is not enabled!")
             raise RuntimeError("FrontPanel is not enabled!")
 
@@ -766,12 +746,7 @@ class XEM7360(XEM):
                 f"vadj{i}": device_settings.GetInt(f"XEM7360_VADJ{i}_VOLTAGE") / 100
                 for i in range(1, 3 + 1)
             }
-
-            logger.info("Please check the I/O voltage settings.")
-            logger.info(f"Bank 12 Voltage: {vadj_voltage_dict['vadj2']:.2f} V")
-            logger.info(f"Bank 15 Voltage: {vadj_voltage_dict['vadj1']:.2f} V")
-            logger.info(f"Bank 16 Voltage: {vadj_voltage_dict['vadj1']:.2f} V")
-            logger.info(f"Bank 32 Voltage: {vadj_voltage_dict['vadj3']:.2f} V")
+            self._vadj_voltage_dict = vadj_voltage_dict
 
             vadj_modes = device_settings.GetInt("XEM7360_VADJ_MODE")
 

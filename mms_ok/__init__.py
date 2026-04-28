@@ -24,6 +24,16 @@ __all__ = [
     "setup_frontpanel",
 ]
 
+# import sys
+# from loguru import logger
+
+# logger.remove()
+
+# logger.add(
+#     sys.stderr,
+#     format="[MMS OK] <green>{time:HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | {message}",
+# )
+
 
 def __getattr__(name):
     if name == "BIST":
