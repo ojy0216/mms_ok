@@ -1,6 +1,6 @@
 # MMS-OK
 
-MMS-OK is a Python interface layer for Opal Kelly FPGA boards used in lab and hardware-control workflows. It wraps common FrontPanel operations—device configuration, wires, triggers, pipes, block pipes, register access, and built-in self-test (BIST)—behind a small Python API and a command-line entry point.
+`mms_ok` is a Python interface layer for Opal Kelly FPGA boards used in lab and hardware-control workflows. It wraps common FrontPanel operations—device configuration, wires, triggers, pipes, block pipes, register access, and built-in self-test (BIST)—behind a small Python API and a command-line entry point.
 
 The package is intended for researchers and lab users who already have Opal Kelly hardware and bitstreams, and who want a repeatable way to install the Python package, check the FrontPanel SDK, run a board test, and script typical host-to-FPGA interactions.
 
@@ -26,16 +26,33 @@ The package also includes BIST bitstreams under `mms_ok/bitstreams` for supporte
 
 ## Requirements
 
+- **Windows only.**
+  - `mms_ok` supports Windows environments only.
+  - **macOS and Linux are not supported.**
 - Python 3.7 or newer.
 - An Opal Kelly board supported by this package.
-- The Opal Kelly FrontPanel SDK installed according to the [official Opal Kelly documentation](https://docs.opalkelly.com/fpsdk/frontpanel-api/).
+- The Opal Kelly FrontPanel SDK for Windows. FrontPanel SDK `5.3.6` is recommended.
 - Python dependencies installed by `pip`: `numpy`, `bitslice`, `loguru`, `rich`, and `tqdm`.
 
-The package imports the FrontPanel Python module as `ok`. On Windows, `mms_ok setup-frontpanel` can copy the default FrontPanel Python files into `~/mms_ok` when the SDK is installed in the default Opal Kelly location. On other platforms, make sure the SDK's Python module is importable in your environment.
+`mms_ok` imports the FrontPanel Python module as `ok`. When the Windows SDK is installed in the default Opal Kelly location, `mms_ok setup-frontpanel` can copy the default FrontPanel Python files into the user's Windows home directory, such as `%USERPROFILE%\mms_ok`.
+
+## FrontPanel SDK setup on Windows
+
+Install the Opal Kelly FrontPanel SDK before installing `mms_ok`, so the SDK files and Windows driver are already present when `mms_ok` verifies the environment.
+
+1. Go to the [Opal Kelly downloads page](https://pins.opalkelly.com/downloads) and sign in with an authorized Opal Kelly account.
+2. Open **File Downloads**.
+3. Download the Windows x64 installer for the recommended SDK version. The expected filename is:
+
+   ```text
+   FrontPanelUSB-Win-x64-5.3.6.exe
+   ```
+
+4. Run the installer and keep the default install location unless your lab setup requires otherwise.
 
 ## Installation
 
-Install from PyPI:
+After the FrontPanel SDK is installed, install `mms_ok` from PyPI:
 
 ```bash
 pip install mms_ok
@@ -48,13 +65,13 @@ mms_ok --help
 mms_ok version
 ```
 
-Check whether the FrontPanel SDK can be imported:
+Finally, verify that `mms_ok` can import the FrontPanel SDK as `ok`:
 
 ```bash
 mms_ok check-sdk
 ```
 
-On Windows, if the SDK is installed but Python cannot import `ok`, try the helper command:
+If the SDK is installed but Python still cannot import `ok`, run the helper command and check again:
 
 ```bash
 mms_ok setup-frontpanel
@@ -77,15 +94,15 @@ Equivalent module execution:
 python -m mms_ok bist
 ```
 
-The package first looks for its packaged BIST bitstreams. For backward compatibility, it can also fall back to `~/mms_ok/bitstreams` if packaged files are unavailable.
+The package first looks for its packaged BIST bitstreams. For backward compatibility, it can also fall back to `%USERPROFILE%\mms_ok\bitstreams` if packaged files are unavailable.
 
 ## Typical lab workflow
 
 A typical session is:
 
-1. Install `mms_ok` and make the Opal Kelly FrontPanel SDK importable.
-2. Connect a supported XEM board.
-3. Verify the SDK with `mms_ok check-sdk` and, when appropriate, verify the connected board with `mms_ok bist`.
+1. Install the Windows FrontPanel SDK with the setup guide above.
+2. Install `mms_ok` and verify that it can import the FrontPanel SDK with `mms_ok check-sdk`.
+3. Connect a supported XEM board and, when appropriate, verify it with `mms_ok bist`.
 4. Load your `.bit` file with `XEM7310` or `XEM7360`.
 5. Use wires, triggers, pipes, and registers to control and inspect your FPGA design.
 6. Close the device when finished. Prefer a context manager in scripts.
