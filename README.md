@@ -6,7 +6,7 @@ The package is intended for researchers and lab users who already have Opal Kell
 
 ## Supported boards
 
-MMS-OK currently provides board-specific classes for:
+`mms_ok` currently provides board-specific classes for:
 
 - `XEM7310` (`XEM7310A75` and `XEM7310A200`)
 - `XEM7360` (`XEM7360K160T`)
