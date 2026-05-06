@@ -28,6 +28,7 @@ __all__ = [
     "XEM7360",
     "__version__",
     "copy_frontpanel_files",
+    "list_devices",
     "setup_frontpanel",
 ]
 
@@ -55,6 +56,10 @@ def __getattr__(name):
         return copy_frontpanel_files
     if name == "setup_frontpanel":
         return setup_frontpanel
+    if name == "list_devices":
+        from .devices import list_devices
+
+        return list_devices
     raise AttributeError("module {!r} has no attribute {!r}".format(__name__, name))
 
 

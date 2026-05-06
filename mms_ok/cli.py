@@ -4,8 +4,14 @@ import argparse
 from typing import Optional, Sequence
 
 from rich.console import Console
+from rich.table import Table
 
 from . import __version__
+from .devices import (
+    DeviceDiscoveryError,
+    FrontPanelUnavailableError,
+    list_devices,
+)
 from .doctor import run_doctor
 from .ok_setup import (
     DEFAULT_FRONTPANEL_DIR,
@@ -23,6 +29,11 @@ LOCK_GUIDANCE = (
     "Close or restart Python processes, IPython/Jupyter kernels, notebooks, IDE "
     "terminals, or anything importing ok/_ok.pyd, then retry."
 )
+
+EXIT_SDK_UNAVAILABLE = 1
+EXIT_NO_DEVICES = 2
+EXIT_DISCOVERY_ERROR = 3
+
 
 def _run_bist(_args) -> int:
     from . import BIST
@@ -61,6 +72,38 @@ def _check_sdk(_args) -> int:
 
     print(f"FrontPanel SDK is available.")
     print(f"FrontPanel SDK version: {get_frontpanel_version(ok)}")
+    return 0
+
+
+def _list_devices(_args) -> int:
+    console = Console()
+
+    try:
+        devices = list_devices()
+    except FrontPanelUnavailableError as exc:
+        console.print(str(exc))
+        return EXIT_SDK_UNAVAILABLE
+    except DeviceDiscoveryError as exc:
+        console.print(str(exc))
+        return EXIT_DISCOVERY_ERROR
+
+    if not devices:
+        console.print("No Opal Kelly FrontPanel devices found.")
+        return EXIT_NO_DEVICES
+
+    table = Table(title="Opal Kelly Devices")
+    table.add_column("device_id")
+    table.add_column("model")
+    table.add_column("serial")
+
+    for device in devices:
+        table.add_row(
+            device.device_id,
+            device.model,
+            device.serial,
+        )
+
+    console.print(table)
     return 0
 
 
@@ -119,6 +162,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Check whether the FrontPanel SDK can be imported",
     )
     check_sdk_parser.set_defaults(handler=_check_sdk)
+
+    devices_parser = subparsers.add_parser(
+        "devices",
+        help="List attached Opal Kelly FrontPanel devices",
+    )
+    devices_parser.set_defaults(handler=_list_devices)
 
     setup_parser = subparsers.add_parser(
         "setup-frontpanel",

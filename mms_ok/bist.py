@@ -17,6 +17,13 @@ from .address import (
     WIRE_IN_START,
     WIRE_OUT_START,
 )
+from .bitstreams import (
+    LEGACY_BITSTREAM_DIR,
+    PACKAGE_BITSTREAM_DIR,
+    bist_bitstream_candidates,
+    first_existing_path,
+    format_checked_paths,
+)
 from .bist_util import btpipe_progress, pipe_progress, trigger_progress, wire_progress
 from .diagnostics import log_critical, log_error
 from .fpga import XEM7310, XEM7360
@@ -24,10 +31,6 @@ from .fpga_config import FPGAConfig
 from .ok_setup import get_ok
 
 console = Console()
-
-PACKAGE_DIR = os.path.dirname(__file__)
-PACKAGE_BITSTREAM_DIR = os.path.join(PACKAGE_DIR, "bitstreams")
-LEGACY_BITSTREAM_DIR = os.path.expanduser("~/mms_ok/bitstreams")
 
 NUM_TEST_CHANNELS = 32
 PIPE_TRANSFER_BYTES = 128 // 8
@@ -80,19 +83,14 @@ class BIST:
 
     @staticmethod
     def _resolve_bitstream_path(bitstream_name: str) -> str:
-        candidate_paths = [
-            os.path.join(PACKAGE_BITSTREAM_DIR, bitstream_name),
-            os.path.join(LEGACY_BITSTREAM_DIR, bitstream_name),
-        ]
-
-        for path in candidate_paths:
-            if os.path.isfile(path):
-                logger.info(f"Using BIST bitstream: {path}")
-                return path
+        resolution = first_existing_path(bist_bitstream_candidates(bitstream_name))
+        if os.path.isfile(resolution.path):
+            logger.info(f"Using BIST bitstream: {resolution.path}")
+            return resolution.path
 
         raise FileNotFoundError(
             "BIST bitstream not found. Checked: {}".format(
-                ", ".join(candidate_paths)
+                format_checked_paths(resolution.checked_paths)
             )
         )
 

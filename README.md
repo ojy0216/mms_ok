@@ -22,7 +22,8 @@ The package also includes BIST bitstreams under `mms_ok/bitstreams` for supporte
 - Pipe and block-pipe transfer helpers for strings, byte buffers, and NumPy arrays.
 - Register bridge read/write helpers.
 - LED helpers for supported XEM boards.
-- CLI commands for version checks, SDK checks, FrontPanel setup, and BIST.
+- Device discovery from Python and the CLI.
+- CLI commands for version checks, SDK checks, FrontPanel setup, device listing, and BIST.
 
 ## Requirements
 
@@ -78,6 +79,30 @@ mms_ok setup-frontpanel
 mms_ok check-sdk
 ```
 
+## Device discovery
+
+List attached FrontPanel devices from the CLI:
+
+```bash
+mms_ok devices
+python -m mms_ok devices
+```
+
+The command prints `device_id`, `model`, and `serial`.
+`device_id` is the Opal Kelly `okTDeviceInfo.deviceID` string.
+
+Use the same discovery from Python:
+
+```python
+import mms_ok
+
+for device in mms_ok.list_devices():
+    print(device.serial, device.model, device.device_id, device.product_id)
+```
+
+`mms_ok.list_devices()` imports the FrontPanel SDK lazily, so `import mms_ok`
+does not require the SDK to be installed.
+
 ## Built-in self-test (BIST)
 
 BIST is the quickest way to confirm that the installed package, FrontPanel SDK, connected board, and packaged board-test bitstream can work together.
@@ -96,16 +121,28 @@ python -m mms_ok bist
 
 The package first looks for its packaged BIST bitstreams. For backward compatibility, it can also fall back to `%USERPROFILE%\mms_ok\bitstreams` if packaged files are unavailable.
 
+## Bitstream paths
+
+`XEM7310(bitstream_path)` and `XEM7360(bitstream_path)` accept absolute paths
+and relative paths. Relative paths are resolved from `../bitstreams` relative to
+the current working directory of the Python process. The package does not search
+for a project root.
+
+If a bitstream is missing, the error message includes the checked candidate
+path. BIST continues to use the packaged bitstreams under `mms_ok/bitstreams`
+first, then the legacy `%USERPROFILE%\mms_ok\bitstreams` fallback.
+
 ## Typical lab workflow
 
 A typical session is:
 
 1. Install the Windows FrontPanel SDK with the setup guide above.
 2. Install `mms_ok` and verify that it can import the FrontPanel SDK with `mms_ok check-sdk`.
-3. Connect a supported XEM board and, when appropriate, verify it with `mms_ok bist`.
-4. Load your `.bit` file with `XEM7310` or `XEM7360`.
-5. Use wires, triggers, pipes, and registers to control and inspect your FPGA design.
-6. Close the device when finished. Prefer a context manager in scripts.
+3. Connect a supported XEM board and verify visibility with `mms_ok devices`.
+4. When appropriate, verify the board with `mms_ok bist`.
+5. Load your `.bit` file with `XEM7310` or `XEM7360`.
+6. Use wires, triggers, pipes, and registers to control and inspect your FPGA design.
+7. Close the device when finished. Prefer a context manager in scripts.
 
 ### Script-style usage with a context manager
 
@@ -252,11 +289,12 @@ FrontPanel endpoint ranges used by the helpers follow the standard Opal Kelly la
 Import the public classes from `mms_ok`:
 
 ```python
-from mms_ok import BIST, XEM7310, XEM7360
+from mms_ok import BIST, XEM7310, XEM7360, list_devices
 ```
 
 Common methods on `XEM7310` and `XEM7360` include:
 
+- Discovery: `list_devices()`.
 - Device lifecycle: `close()`, context manager support, `reset(...)`.
 - LEDs: `SetLED(...)`.
 - Wires: `SetWireInValue(...)`, `UpdateWireIns()`, `UpdateWireOuts()`, `GetWireOutValue(...)`.
