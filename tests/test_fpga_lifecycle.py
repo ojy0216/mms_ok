@@ -200,6 +200,39 @@ def test_open_failure_does_not_close_unopened_handle(bitstream_path):
     assert FakeFrontPanel.instances[0].close_calls == 0
 
 
+def test_relative_bitstream_path_is_parent_bitstreams_relative(tmp_path, monkeypatch):
+    work_dir = tmp_path / "work"
+    bitstream_dir = tmp_path / "bitstreams"
+    work_dir.mkdir()
+    bitstream_dir.mkdir()
+    path = bitstream_dir / "design.bit"
+    path.write_bytes(b"fake bitstream")
+    monkeypatch.chdir(work_dir)
+
+    device = LifecycleXEM("design.bit")
+
+    try:
+        assert device._bitstream_path == str(path.resolve())
+    finally:
+        device.close()
+
+
+def test_missing_relative_bitstream_reports_checked_parent_bitstreams_path(
+    tmp_path, monkeypatch
+):
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+    missing = tmp_path / "bitstreams" / "missing.bit"
+    monkeypatch.chdir(work_dir)
+
+    with pytest.raises(FileNotFoundError) as exc_info:
+        LifecycleXEM("missing.bit")
+
+    message = str(exc_info.value)
+    assert "../bitstreams" in message
+    assert str(missing.resolve()) in message
+
+
 def test_diagnostics_returns_required_keys(bitstream_path):
     device = LifecycleXEM(bitstream_path)
 

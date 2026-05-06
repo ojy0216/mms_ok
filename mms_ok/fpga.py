@@ -16,6 +16,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from . import __version__
+from .bitstreams import format_checked_paths, resolve_user_bitstream_path
 from .diagnostics import log_critical, log_error
 from .display import print_fpga_overview
 from .fpga_components import (
@@ -80,7 +81,9 @@ class XEM(ABC):
         self._frontpanel_version = get_frontpanel_version(ok)
 
         try:
-            self._bitstream_path = os.path.abspath(bitstream_path)
+            resolution = resolve_user_bitstream_path(bitstream_path)
+            self._bitstream_path = resolution.path
+            self._checked_bitstream_paths = resolution.checked_paths
             self._validate_bitstream_path()
 
             self._connect()
@@ -145,8 +148,16 @@ class XEM(ABC):
             ValueError: If the bitstream file extension is not ".bit".
         """
         if not os.path.isfile(self._bitstream_path):
-            log_critical(f'"{self._bitstream_path}" is invalid!')
-            raise FileNotFoundError(f"{self._bitstream_path} is an invalid bitstream!")
+            checked = format_checked_paths(
+                getattr(self, "_checked_bitstream_paths", [self._bitstream_path])
+            )
+            message = (
+                "Bitstream file not found. Relative paths are resolved from "
+                "../bitstreams relative to the current working directory. "
+                "Checked: {}".format(checked)
+            )
+            log_critical(message)
+            raise FileNotFoundError(message)
 
         extension = os.path.splitext(self._bitstream_path)[1]
         if extension != ".bit":
