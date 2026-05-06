@@ -5,10 +5,15 @@ import time
 import types
 import weakref
 from abc import ABC, abstractmethod
-from typing import Optional, Type, Union
+from dataclasses import asdict, is_dataclass
+from typing import Any, Dict, Optional, Type, Union
 
 import numpy as np
 from loguru import logger
+from rich import box
+from rich.console import Console, Group
+from rich.panel import Panel
+from rich.table import Table
 
 from . import __version__
 from .diagnostics import log_critical, log_error
@@ -231,6 +236,94 @@ class XEM(ABC):
         Return whether the underlying FrontPanel device handle is open.
         """
         return bool(self.xem.IsOpen())
+
+    def diagnostics(
+        self,
+        *,
+        console: Optional[Console] = None,
+        print_output: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Return and optionally print FPGA runtime diagnostics.
+
+        The returned dictionary is intended for tests and scripts. The default
+        printed output is a Rich panel/table for interactive use.
+        """
+        config = self.config
+        board = asdict(config) if is_dataclass(config) else dict(vars(config))
+
+        try:
+            is_open = bool(self.xem.IsOpen())
+        except Exception as exc:
+            is_open = "error: {}: {}".format(type(exc).__name__, exc)
+
+        data = {
+            "board": board,
+            "frontpanel": {
+                "version": getattr(self, "_frontpanel_version", "unknown"),
+                "is_open": is_open,
+            },
+            "bitstream": {
+                "path": getattr(self, "_bitstream_path", None),
+                "timestamp": getattr(self, "_bitstream_timestamp", None),
+            },
+            "endpoints": {
+                "wire": {
+                    "width": getattr(config, "wire_width", None),
+                    "auto_wire_in": getattr(self, "auto_wire_in", None),
+                    "auto_wire_out": getattr(self, "auto_wire_out", None),
+                },
+                "trigger": {
+                    "width": getattr(config, "trigger_width", None),
+                    "auto_trigger_out": getattr(self, "auto_trigger_out", None),
+                },
+                "pipe": {
+                    "width": getattr(config, "pipe_width", None),
+                },
+                "block_pipe": {
+                    "max_block_size": getattr(config, "max_bt_blocksize", None),
+                },
+            },
+        }
+
+        vadj_voltage_dict = getattr(self, "_vadj_voltage_dict", None)
+        if vadj_voltage_dict is not None:
+            data["board"]["vadj_voltage"] = vadj_voltage_dict
+
+        if print_output:
+            output_console = console or Console()
+            output_console.print(self._diagnostics_panel(data))
+
+        return data
+
+    @staticmethod
+    def _diagnostics_panel(data: Dict[str, Any]) -> Panel:
+        board_table = Table(title="Board", show_header=False, box=box.ASCII)
+        board_table.add_column("Field", style="cyan", no_wrap=True)
+        board_table.add_column("Value")
+        for key, value in data["board"].items():
+            board_table.add_row(str(key), str(value))
+
+        runtime_table = Table(title="Runtime", show_header=False, box=box.ASCII)
+        runtime_table.add_column("Field", style="cyan", no_wrap=True)
+        runtime_table.add_column("Value")
+        runtime_table.add_row("FrontPanel version", str(data["frontpanel"]["version"]))
+        runtime_table.add_row("IsOpen", str(data["frontpanel"]["is_open"]))
+        runtime_table.add_row("Bitstream path", str(data["bitstream"]["path"]))
+
+        endpoint_table = Table(title="Endpoints", show_header=True, box=box.ASCII)
+        endpoint_table.add_column("Type", style="cyan", no_wrap=True)
+        endpoint_table.add_column("Setting")
+        endpoint_table.add_column("Value")
+        for endpoint_type, settings in data["endpoints"].items():
+            for setting, value in settings.items():
+                endpoint_table.add_row(endpoint_type, setting, str(value))
+
+        return Panel(
+            Group(board_table, runtime_table, endpoint_table),
+            title="FPGA Diagnostics",
+            box=box.ASCII,
+        )
 
     def close(self) -> None:
         """

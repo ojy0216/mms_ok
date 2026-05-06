@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import weakref
+from io import StringIO
 
 import pytest
+from rich.console import Console
 
 from mms_ok import fpga
 from mms_ok import fpga_config
@@ -196,3 +198,36 @@ def test_open_failure_does_not_close_unopened_handle(bitstream_path):
         LifecycleXEM(bitstream_path)
 
     assert FakeFrontPanel.instances[0].close_calls == 0
+
+
+def test_diagnostics_returns_required_keys(bitstream_path):
+    device = LifecycleXEM(bitstream_path)
+
+    try:
+        data = device.diagnostics(print_output=False)
+    finally:
+        device.close()
+
+    assert data["board"]["product_name"] == "XEM7310"
+    assert data["frontpanel"]["version"] == "test"
+    assert data["frontpanel"]["is_open"] is True
+    assert data["bitstream"]["path"] == bitstream_path
+    assert data["endpoints"]["trigger"]["width"] == 32
+    assert data["endpoints"]["block_pipe"]["max_block_size"] == 16384
+
+
+def test_diagnostics_prints_rich_panel(bitstream_path):
+    device = LifecycleXEM(bitstream_path)
+    stream = StringIO()
+    console = Console(file=stream, force_terminal=False, width=120)
+
+    try:
+        data = device.diagnostics(console=console)
+    finally:
+        device.close()
+
+    output = stream.getvalue()
+    assert data["frontpanel"]["is_open"] is True
+    assert "FPGA Diagnostics" in output
+    assert "Endpoints" in output
+    assert "Bitstream path" in output
