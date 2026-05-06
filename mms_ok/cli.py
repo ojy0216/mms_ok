@@ -11,6 +11,7 @@ from .ok_setup import (
     DEFAULT_FRONTPANEL_DIR,
     DEFAULT_LIB_DIR,
     copy_frontpanel_files,
+    frontpanel_cache_status,
     get_frontpanel_version,
     import_ok,
     reset_frontpanel_cache,
@@ -31,6 +32,11 @@ def _run_bist(_args) -> int:
 
 
 def _setup_frontpanel(_args) -> int:
+    cache = frontpanel_cache_status(DEFAULT_LIB_DIR)
+    if cache["complete"]:
+        print(f"FrontPanel files already set up at: {cache['path']}")
+        return 0
+
     target_dir = copy_frontpanel_files()
     message = (
         f"FrontPanel files copied to: {target_dir}"

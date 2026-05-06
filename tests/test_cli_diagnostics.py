@@ -180,3 +180,41 @@ def test_reset_cache_permission_error_reports_lock_guidance(monkeypatch, capsys)
     assert "file is locked" in captured.out
     assert "IPython/Jupyter kernels" in captured.out
     assert "ok/_ok.pyd" in captured.out
+
+
+def test_setup_frontpanel_reports_existing_complete_cache(
+    monkeypatch, tmp_path, capsys
+):
+    lib_dir = str(tmp_path / "cache")
+
+    def fail_copy():
+        raise AssertionError("copy_frontpanel_files should not be called")
+
+    monkeypatch.setattr(cli, "frontpanel_cache_status", lambda path: _cache(lib_dir))
+    monkeypatch.setattr(cli, "copy_frontpanel_files", fail_copy)
+
+    status = cli.main(["setup-frontpanel"])
+
+    captured = capsys.readouterr()
+    assert status == 0
+    assert "already set up" in captured.out
+    assert "FrontPanel files copied" not in captured.out
+    assert lib_dir in captured.out
+
+
+def test_setup_frontpanel_reports_copy_when_cache_is_missing(
+    monkeypatch, tmp_path, capsys
+):
+    lib_dir = str(tmp_path / "cache")
+
+    monkeypatch.setattr(
+        cli, "frontpanel_cache_status", lambda path: _cache(lib_dir, complete=False)
+    )
+    monkeypatch.setattr(cli, "copy_frontpanel_files", lambda: lib_dir)
+
+    status = cli.main(["setup-frontpanel"])
+
+    captured = capsys.readouterr()
+    assert status == 0
+    assert "FrontPanel files copied to:" in captured.out
+    assert lib_dir in captured.out
