@@ -66,6 +66,9 @@ mms_ok --help
 mms_ok version
 ```
 
+Running `mms_ok` with no arguments opens an arrow-key setup helper menu for
+common FrontPanel and Jupyter environment diagnostics.
+
 Finally, verify that `mms_ok` can import the FrontPanel SDK as `ok`:
 
 ```bash

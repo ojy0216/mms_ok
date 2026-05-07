@@ -53,6 +53,97 @@ def test_help_includes_diagnostics_commands(capsys):
     assert "reset-cache" in captured.out
 
 
+def test_bare_cli_renders_interactive_menu(monkeypatch, capsys):
+    monkeypatch.setattr(cli, "_read_menu_key", lambda: cli.KEY_QUIT)
+
+    status = cli.main([])
+
+    captured = capsys.readouterr()
+    assert status == 0
+    assert "mms_ok setup helper" in captured.out
+    assert "check-sdk" in captured.out
+    assert "setup-frontpanel" in captured.out
+    assert "doctor" in captured.out
+    assert "bist" in captured.out
+    assert "version" not in captured.out
+
+
+def test_bare_cli_menu_dispatches_selected_command(monkeypatch):
+    calls = []
+
+    def fake_doctor(args):
+        calls.append(args.command)
+        return 17
+
+    monkeypatch.setattr(cli, "_read_menu_key", lambda: cli.KEY_ENTER)
+    monkeypatch.setattr(cli, "_run_doctor", fake_doctor)
+
+    status = cli.main([])
+
+    assert status == 17
+    assert calls == ["doctor"]
+
+
+def test_bare_cli_menu_arrow_selection_dispatches_command(monkeypatch):
+    calls = []
+    keys = iter([cli.KEY_DOWN, cli.KEY_DOWN, cli.KEY_ENTER])
+
+    def fake_setup_frontpanel(args):
+        calls.append(args.command)
+        return 23
+
+    monkeypatch.setattr(cli, "_read_menu_key", lambda: next(keys))
+    monkeypatch.setattr(cli, "_setup_frontpanel", fake_setup_frontpanel)
+
+    status = cli.main([])
+
+    assert status == 23
+    assert calls == ["setup-frontpanel"]
+
+
+def test_bare_cli_menu_quit_exits_cleanly(monkeypatch):
+    monkeypatch.setattr(cli, "_read_menu_key", lambda: cli.KEY_QUIT)
+
+    assert cli.main([]) == 0
+
+
+def test_bare_cli_menu_eof_exits_cleanly(monkeypatch):
+    def raise_eof():
+        raise EOFError
+
+    monkeypatch.setattr(cli, "_read_menu_key", raise_eof)
+
+    assert cli.main([]) == 0
+
+
+def test_bare_cli_menu_keyboard_interrupt_exits_cleanly(monkeypatch):
+    def raise_keyboard_interrupt():
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli, "_read_menu_key", raise_keyboard_interrupt)
+
+    assert cli.main([]) == 0
+
+
+def test_bare_cli_menu_invalid_input_reprompts_without_traceback(monkeypatch, capsys):
+    keys = iter([cli.KEY_UNKNOWN, cli.KEY_QUIT])
+    monkeypatch.setattr(cli, "_read_menu_key", lambda: next(keys))
+
+    status = cli.main([])
+
+    captured = capsys.readouterr()
+    assert status == 0
+    assert "Use the arrow keys, Enter, or q." in captured.out
+
+
+def test_existing_version_subcommand_still_dispatches(capsys):
+    status = cli.main(["version"])
+
+    captured = capsys.readouterr()
+    assert status == 0
+    assert captured.out == f"v{cli.__version__}\n"
+
+
 def test_doctor_success_reports_api_and_device_count(monkeypatch, tmp_path, capsys):
     lib_dir = str(tmp_path / "cache")
     sdk_dir = str(tmp_path / "sdk")
