@@ -217,6 +217,26 @@ def test_relative_bitstream_path_is_parent_bitstreams_relative(tmp_path, monkeyp
         device.close()
 
 
+def test_directory_relative_bitstream_path_is_cwd_relative(tmp_path, monkeypatch):
+    work_dir = tmp_path / "work"
+    cwd_bitstream_dir = work_dir / "path" / "to"
+    parent_bitstream_dir = tmp_path / "bitstreams" / "path" / "to"
+    cwd_bitstream_dir.mkdir(parents=True)
+    parent_bitstream_dir.mkdir(parents=True)
+    cwd_path = cwd_bitstream_dir / "design.bit"
+    parent_path = parent_bitstream_dir / "design.bit"
+    cwd_path.write_bytes(b"fake cwd bitstream")
+    parent_path.write_bytes(b"fake parent bitstream")
+    monkeypatch.chdir(work_dir)
+
+    device = LifecycleXEM("path/to/design.bit")
+
+    try:
+        assert device._bitstream_path == str(cwd_path.resolve())
+    finally:
+        device.close()
+
+
 def test_absolute_bitstream_path_is_used_directly(tmp_path):
     path = tmp_path / "design.bit"
     path.write_bytes(b"fake bitstream")

@@ -26,7 +26,11 @@ def user_bitstream_candidates(bitstream_path: str) -> List[str]:
     expanded = os.path.expandvars(os.path.expanduser(bitstream_path))
     if os.path.isabs(expanded):
         return [_normalize(expanded)]
-    return [os.path.abspath(os.path.join(os.getcwd(), USER_BITSTREAM_BASE_DIR, expanded))]
+    if os.path.basename(expanded) == expanded:
+        return [
+            os.path.abspath(os.path.join(os.getcwd(), USER_BITSTREAM_BASE_DIR, expanded))
+        ]
+    return [_normalize(expanded)]
 
 
 def resolve_user_bitstream_path(bitstream_path: str) -> BitstreamResolution:
