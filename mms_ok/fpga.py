@@ -154,7 +154,8 @@ class XEM(ABC):
             message = (
                 "Bitstream file not found. Pass an absolute path, or pass a "
                 "bitstream filename to load from ../bitstreams relative to the "
-                "current working directory. "
+                "current working directory. Relative paths with directories "
+                "are loaded relative to the current working directory. "
                 "Checked: {}".format(checked)
             )
             log_critical(message)
