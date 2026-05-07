@@ -152,8 +152,9 @@ class XEM(ABC):
                 getattr(self, "_checked_bitstream_paths", [self._bitstream_path])
             )
             message = (
-                "Bitstream file not found. Relative paths are resolved from "
-                "../bitstreams relative to the current working directory. "
+                "Bitstream file not found. Pass an absolute path, or pass a "
+                "bitstream filename to load from ../bitstreams relative to the "
+                "current working directory. "
                 "Checked: {}".format(checked)
             )
             log_critical(message)

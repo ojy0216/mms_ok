@@ -6,6 +6,7 @@ import os
 
 from rich.console import Console
 from rich.table import Table
+from rich.text import Text
 
 from .ok_setup import (
     frontpanel_cache_status,
@@ -16,9 +17,22 @@ from .ok_setup import (
 )
 
 
-STATUS_PASS = "[✅]"
-STATUS_FAIL = "[❌]"
+STATUS_PASS = "[O]"
+STATUS_FAIL = "[X]"
 STATUS_WARN = "[!]"
+STATUS_STYLES = {
+    STATUS_PASS: "green",
+    STATUS_FAIL: "red",
+    STATUS_WARN: "yellow",
+}
+CRITICAL_CHECKS = {
+    "SDK path",
+    "Python bitness",
+    "_ok native module",
+    "ok import",
+    "FrontPanel API",
+    "Device count",
+}
 
 
 def _get_device_count(ok_module):
@@ -30,7 +44,11 @@ def _get_device_count(ok_module):
 
 
 def _add_doctor_row(table, status, check, result, details=""):
-    table.add_row(status, check, result, details)
+    table.add_row(Text(status, style=STATUS_STYLES[status]), check, result, details)
+
+
+def _append_doctor_row(rows, status, check, result, details=""):
+    rows.append((status, check, result, details))
 
 
 def run_doctor(frontpanel_dir: str, lib_dir: str) -> int:
@@ -68,67 +86,68 @@ def run_doctor(frontpanel_dir: str, lib_dir: str) -> int:
     elif cache["missing"]:
         cache_state = "missing"
 
-    _add_doctor_row(
-        table,
+    rows = []
+    _append_doctor_row(
+        rows,
         STATUS_PASS if sdk_exists else STATUS_FAIL,
         "SDK path",
         "found" if sdk_exists else "missing",
         frontpanel_dir,
     )
     cache_status = STATUS_PASS
-    if cache["partial"]:
+    if cache["partial"] or cache["missing"]:
         cache_status = STATUS_WARN
-    elif cache["missing"]:
-        cache_status = STATUS_FAIL
-    _add_doctor_row(table, cache_status, "Local cache", cache_state, cache["path"])
+    _append_doctor_row(rows, cache_status, "Local cache", cache_state, cache["path"])
     for filename, info in cache["files"].items():
-        _add_doctor_row(
-            table,
-            STATUS_PASS if info["exists"] else STATUS_FAIL,
+        _append_doctor_row(
+            rows,
+            STATUS_PASS if info["exists"] else STATUS_WARN,
             "Cache file",
             "present" if info["exists"] else "missing",
             "{}: {}".format(filename, info["path"]),
         )
     bitness = python_bitness()
-    _add_doctor_row(
-        table,
+    _append_doctor_row(
+        rows,
         STATUS_PASS if bitness == 64 else STATUS_FAIL,
         "Python bitness",
         "{}-bit".format(bitness),
         "x64 FrontPanel files require 64-bit Python",
     )
-    _add_doctor_row(
-        table,
-        STATUS_PASS if pyd_present and probe["_ok_imported"] else STATUS_FAIL,
+    _append_doctor_row(
+        rows,
+        STATUS_PASS if probe["_ok_imported"] else STATUS_FAIL,
         "_ok native module",
-        "present/imported"
-        if pyd_present and probe["_ok_imported"]
+        "imported"
+        if probe["_ok_imported"]
         else "present/import failed"
         if pyd_present
-        else "missing",
+        else "not importable",
         probe["_ok_error"] or cache["files"]["_ok.pyd"]["path"],
     )
-    _add_doctor_row(
-        table,
+    _append_doctor_row(
+        rows,
         STATUS_PASS if probe["ok_imported"] else STATUS_FAIL,
         "ok import",
         "imported" if probe["ok_imported"] else "failed",
         probe["ok_error"] or ("used local cache" if probe["used_cache_path"] else ""),
     )
-    _add_doctor_row(
-        table,
+    _append_doctor_row(
+        rows,
         STATUS_PASS if ok_module is not None else STATUS_FAIL,
         "FrontPanel API",
         str(api_version),
         "",
     )
-    _add_doctor_row(
-        table,
+    _append_doctor_row(
+        rows,
         device_status,
         "Device count",
         str(device_count),
         device_error or "queried via ok.okCFrontPanel",
     )
+    for row in rows:
+        _add_doctor_row(table, *row)
 
     guidance = []
     if not sdk_exists:
@@ -138,8 +157,8 @@ def run_doctor(frontpanel_dir: str, lib_dir: str) -> int:
         )
     if cache["partial"] or cache["missing"]:
         guidance.append(
-            "Local cache is not complete. Run `mms_ok reset-cache` after confirming "
-            "the SDK path is correct."
+            "Optional local cache is not complete. If imports rely on the cache, "
+            "run `mms_ok reset-cache` after confirming the SDK path is correct."
         )
     if not probe["ok_imported"]:
         guidance.append(
@@ -166,5 +185,8 @@ def run_doctor(frontpanel_dir: str, lib_dir: str) -> int:
     for item in guidance:
         console.print("- {}".format(item))
 
-    critical_failure = not probe["ok_imported"] or device_error is not None
+    critical_failure = any(
+        status == STATUS_FAIL and check in CRITICAL_CHECKS
+        for status, check, _result, _details in rows
+    )
     return 1 if critical_failure else 0
