@@ -126,13 +126,31 @@ The package first looks for its packaged BIST bitstreams. For backward compatibi
 
 ## Bitstream paths
 
-`XEM7310(bitstream_path)` and `XEM7360(bitstream_path)` accept absolute paths
-and relative paths. Relative paths are resolved from `../bitstreams` relative to
-the current working directory of the Python process. The package does not search
-for a project root.
+`XEM7310(bitstream_path)` and `XEM7360(bitstream_path)` accept absolute paths,
+such as `C:\path\to\design.bit`. `~` and environment variables are expanded.
+When only a bitstream filename such as `design.bit` is provided, it is loaded
+from `../bitstreams` relative to the current working directory.
+
+Examples:
+
+```python
+from mms_ok import XEM7310
+
+# Absolute path: uses this exact file after path expansion.
+fpga = XEM7310(r"C:\Users\JY\fpga\design.bit")
+
+# User-home path: "~" expands to the current user's home directory.
+fpga = XEM7310("~/fpga/design.bit")
+
+# Environment variable path: "%USERPROFILE%" expands before loading.
+fpga = XEM7310(r"%USERPROFILE%\fpga\design.bit")
+
+# Filename only: loads "../bitstreams/design.bit" from the current working directory.
+fpga = XEM7310("design.bit")
+```
 
 If a bitstream is missing, the error message includes the checked candidate
-path. BIST continues to use the packaged bitstreams under `mms_ok/bitstreams`
+paths. BIST continues to use the packaged bitstreams under `mms_ok/bitstreams`
 first, then the legacy `%USERPROFILE%\mms_ok\bitstreams` fallback.
 
 ## Typical lab workflow

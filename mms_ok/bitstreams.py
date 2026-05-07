@@ -30,8 +30,7 @@ def user_bitstream_candidates(bitstream_path: str) -> List[str]:
 
 
 def resolve_user_bitstream_path(bitstream_path: str) -> BitstreamResolution:
-    checked_paths = user_bitstream_candidates(bitstream_path)
-    return BitstreamResolution(path=checked_paths[0], checked_paths=checked_paths)
+    return first_existing_path(user_bitstream_candidates(bitstream_path))
 
 
 def bist_bitstream_candidates(bitstream_name: str) -> List[str]:

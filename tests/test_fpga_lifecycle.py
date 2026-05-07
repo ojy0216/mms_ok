@@ -217,7 +217,40 @@ def test_relative_bitstream_path_is_parent_bitstreams_relative(tmp_path, monkeyp
         device.close()
 
 
-def test_missing_relative_bitstream_reports_checked_parent_bitstreams_path(
+def test_absolute_bitstream_path_is_used_directly(tmp_path):
+    path = tmp_path / "design.bit"
+    path.write_bytes(b"fake bitstream")
+
+    device = LifecycleXEM(str(path))
+
+    try:
+        assert device._bitstream_path == str(path.resolve())
+    finally:
+        device.close()
+
+
+def test_filename_bitstream_ignores_cwd_file_and_uses_parent_bitstreams(
+    tmp_path, monkeypatch
+):
+    work_dir = tmp_path / "work"
+    bitstream_dir = tmp_path / "bitstreams"
+    work_dir.mkdir()
+    bitstream_dir.mkdir()
+    cwd_path = work_dir / "design.bit"
+    parent_path = bitstream_dir / "design.bit"
+    cwd_path.write_bytes(b"fake cwd bitstream")
+    parent_path.write_bytes(b"fake parent bitstream")
+    monkeypatch.chdir(work_dir)
+
+    device = LifecycleXEM("design.bit")
+
+    try:
+        assert device._bitstream_path == str(parent_path.resolve())
+    finally:
+        device.close()
+
+
+def test_missing_filename_bitstream_reports_checked_parent_bitstreams_path(
     tmp_path, monkeypatch
 ):
     work_dir = tmp_path / "work"

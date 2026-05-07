@@ -13,8 +13,17 @@ class FakeFrontPanel:
         return 2
 
 
+class EmptyFrontPanel:
+    def GetDeviceCount(self) -> int:
+        return 0
+
+
 class FakeOk:
     okCFrontPanel = FakeFrontPanel
+
+
+class EmptyOk:
+    okCFrontPanel = EmptyFrontPanel
 
 
 class BrokenFrontPanel:
@@ -234,6 +243,118 @@ def test_doctor_fails_when_frontpanel_api_probe_fails(
     assert "Device count" in captured.out
     assert "frontpanel unavailable" in captured.out
     assert "FrontPanel API probing failed" in captured.out
+
+
+@pytest.mark.parametrize(
+    ("sdk_exists", "cache", "probe"),
+    [
+        (
+            False,
+            lambda path: _cache(path),
+            {
+                "ok_module": FakeOk,
+                "ok_imported": True,
+                "_ok_imported": True,
+                "ok_error": None,
+                "_ok_error": None,
+                "used_cache_path": True,
+            },
+        ),
+        (
+            True,
+            lambda path: _cache(path),
+            {
+                "ok_module": FakeOk,
+                "ok_imported": True,
+                "_ok_imported": False,
+                "ok_error": None,
+                "_ok_error": "ImportError: DLL load failed",
+                "used_cache_path": True,
+            },
+        ),
+    ],
+)
+def test_doctor_fails_when_setup_rows_fail_even_if_ok_import_succeeds(
+    monkeypatch, tmp_path, capsys, sdk_exists, cache, probe
+):
+    lib_dir = str(tmp_path / "cache")
+    sdk_dir = str(tmp_path / "sdk")
+
+    monkeypatch.setattr(doctor.os.path, "isdir", lambda path: sdk_exists)
+    monkeypatch.setattr(doctor, "frontpanel_cache_status", cache)
+    monkeypatch.setattr(doctor, "probe_frontpanel_import", lambda path: probe)
+    monkeypatch.setattr(doctor, "get_frontpanel_version", lambda ok: "9.9.9")
+
+    status = cli.main(["doctor", "--frontpanel-dir", sdk_dir, "--lib-dir", lib_dir])
+
+    captured = capsys.readouterr()
+    assert status == 1
+    assert "ok import" in captured.out
+    assert "imported" in captured.out
+
+
+def test_doctor_allows_missing_optional_cache_when_imports_and_api_work(
+    monkeypatch, tmp_path, capsys
+):
+    lib_dir = str(tmp_path / "cache")
+    sdk_dir = str(tmp_path / "sdk")
+
+    monkeypatch.setattr(doctor.os.path, "isdir", lambda path: path == sdk_dir)
+    monkeypatch.setattr(
+        doctor, "frontpanel_cache_status", lambda path: _cache(path, complete=False)
+    )
+    monkeypatch.setattr(
+        doctor,
+        "probe_frontpanel_import",
+        lambda path: {
+            "ok_module": FakeOk,
+            "ok_imported": True,
+            "_ok_imported": True,
+            "ok_error": None,
+            "_ok_error": None,
+            "used_cache_path": False,
+        },
+    )
+    monkeypatch.setattr(doctor, "get_frontpanel_version", lambda ok: "9.9.9")
+
+    status = cli.main(["doctor", "--frontpanel-dir", sdk_dir, "--lib-dir", lib_dir])
+
+    captured = capsys.readouterr()
+    assert status == 0
+    assert "Local cache" in captured.out
+    assert "Optional local cache is not complete" in captured.out
+    assert "ok import" in captured.out
+    assert "imported" in captured.out
+
+
+def test_doctor_warning_only_zero_devices_exits_success(
+    monkeypatch, tmp_path, capsys
+):
+    lib_dir = str(tmp_path / "cache")
+    sdk_dir = str(tmp_path / "sdk")
+
+    monkeypatch.setattr(doctor.os.path, "isdir", lambda path: path == sdk_dir)
+    monkeypatch.setattr(doctor, "frontpanel_cache_status", lambda path: _cache(path))
+    monkeypatch.setattr(
+        doctor,
+        "probe_frontpanel_import",
+        lambda path: {
+            "ok_module": EmptyOk,
+            "ok_imported": True,
+            "_ok_imported": True,
+            "ok_error": None,
+            "_ok_error": None,
+            "used_cache_path": True,
+        },
+    )
+    monkeypatch.setattr(doctor, "get_frontpanel_version", lambda ok: "9.9.9")
+
+    status = cli.main(["doctor", "--frontpanel-dir", sdk_dir, "--lib-dir", lib_dir])
+
+    captured = capsys.readouterr()
+    assert status == 0
+    assert "Device count" in captured.out
+    assert "0" in captured.out
 
 
 def test_reset_cache_uses_resolved_default_path(monkeypatch, capsys):
