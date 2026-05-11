@@ -3,13 +3,21 @@
 from __future__ import annotations
 
 import inspect
-from pathlib import Path
+import os
 from typing import Optional
 
 from loguru import logger
 
 
-PACKAGE_DIR = Path(__file__).resolve().parent
+PACKAGE_DIR = os.path.abspath(os.path.dirname(__file__))
+
+
+def _is_package_path(filename: str) -> bool:
+    try:
+        frame_path = os.path.abspath(filename)
+        return os.path.commonpath([PACKAGE_DIR, frame_path]) == PACKAGE_DIR
+    except (OSError, ValueError):
+        return False
 
 
 def _external_caller() -> Optional[str]:
@@ -19,12 +27,12 @@ def _external_caller() -> Optional[str]:
             return f"{filename}:{frame.lineno} in {frame.function}()"
 
         try:
-            frame_path = Path(filename).resolve()
-            frame_path.relative_to(PACKAGE_DIR)
-        except ValueError:
-            return f"{frame_path}:{frame.lineno} in {frame.function}()"
+            frame_path = os.path.abspath(filename)
         except OSError:
             return f"{filename}:{frame.lineno} in {frame.function}()"
+
+        if not _is_package_path(filename):
+            return f"{frame_path}:{frame.lineno} in {frame.function}()"
     return None
 
 
