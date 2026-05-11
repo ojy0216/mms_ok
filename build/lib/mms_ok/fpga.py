@@ -3,13 +3,20 @@ from __future__ import annotations
 import os
 import time
 import types
+import weakref
 from abc import ABC, abstractmethod
-from typing import Optional, Type, Union
+from dataclasses import asdict, is_dataclass
+from typing import Any, Dict, Optional, Type, Union
 
 import numpy as np
 from loguru import logger
+from rich import box
+from rich.console import Console, Group
+from rich.panel import Panel
+from rich.table import Table
 
 from . import __version__
+from .bitstreams import format_checked_paths, resolve_user_bitstream_path
 from .diagnostics import log_critical, log_error
 from .display import print_fpga_overview
 from .fpga_components import (
@@ -64,41 +71,68 @@ class XEM(ABC):
         """
         self._led_used = False
         self._led_address = None
+        self._opened = False
+        self._close_finalizer = None
         ok = get_ok()
         self.xem = ok.okCFrontPanel()
+        self._close_finalizer = weakref.finalize(
+            self, self._finalize_xem_handle, self.xem
+        )
         self._frontpanel_version = get_frontpanel_version(ok)
 
-        self._bitstream_path = os.path.abspath(bitstream_path)
-        self._validate_bitstream_path()
+        try:
+            resolution = resolve_user_bitstream_path(bitstream_path)
+            self._bitstream_path = resolution.path
+            self._checked_bitstream_paths = resolution.checked_paths
+            self._validate_bitstream_path()
 
-        self._connect()
-        self._configure()
+            self._connect()
+            self._configure()
 
-        self.auto_wire_in = True
-        self.auto_wire_out = True
-        self.auto_trigger_out = True
+            self.auto_wire_in = True
+            self.auto_wire_out = True
+            self.auto_trigger_out = True
 
-        self.verbose_level = 0
+            self.verbose_level = 0
 
-        # Initialize components
-        self.wire_ops = WireOperations(self.xem, self.config.wire_width)
-        self.trigger_ops = TriggerOperations(self.xem, self.config.trigger_width)
-        self.pipe_ops = PipeOperations(self.xem)
-        self.block_pipe_ops = BlockPipeOperations(
-            self.xem, self.config.max_bt_blocksize
-        )
+            # Initialize components
+            self.wire_ops = WireOperations(self.xem, self.config.wire_width)
+            self.trigger_ops = TriggerOperations(self.xem, self.config.trigger_width)
+            self.pipe_ops = PipeOperations(self.xem)
+            self.block_pipe_ops = BlockPipeOperations(
+                self.xem, self.config.max_bt_blocksize
+            )
 
-        self._check_device_settings()
+            self._check_device_settings()
 
-        print_fpga_overview(
-            version=__version__,
-            frontpanel_version=self._frontpanel_version,
-            bitstream_path=self._bitstream_path,
-            bitstream_timestamp=self._bitstream_timestamp,
-            config=self.config,
-            vadj_voltage_dict=getattr(self, "_vadj_voltage_dict", None),
-        )
-    
+            print_fpga_overview(
+                version=__version__,
+                frontpanel_version=self._frontpanel_version,
+                bitstream_path=self._bitstream_path,
+                bitstream_timestamp=self._bitstream_timestamp,
+                config=self.config,
+                vadj_voltage_dict=getattr(self, "_vadj_voltage_dict", None),
+            )
+        except Exception:
+            if self._opened:
+                self.close()
+            else:
+                self._detach_close_finalizer()
+            raise
+
+    @staticmethod
+    def _finalize_xem_handle(xem) -> None:
+        try:
+            if bool(xem.IsOpen()):
+                xem.Close()
+        except Exception:
+            pass
+
+    def _detach_close_finalizer(self) -> None:
+        finalizer = getattr(self, "_close_finalizer", None)
+        if finalizer is not None and finalizer.alive:
+            finalizer.detach()
+
     def _validate_bitstream_path(self) -> None:
         """
         Validates the bitstream path and checks if it is a valid bitstream file.
@@ -114,8 +148,18 @@ class XEM(ABC):
             ValueError: If the bitstream file extension is not ".bit".
         """
         if not os.path.isfile(self._bitstream_path):
-            log_critical(f'"{self._bitstream_path}" is invalid!')
-            raise FileNotFoundError(f"{self._bitstream_path} is an invalid bitstream!")
+            checked = format_checked_paths(
+                getattr(self, "_checked_bitstream_paths", [self._bitstream_path])
+            )
+            message = (
+                "Bitstream file not found. Pass an absolute path, or pass a "
+                "bitstream filename to load from ../bitstreams relative to the "
+                "current working directory. Relative paths with directories "
+                "are loaded relative to the current working directory. "
+                "Checked: {}".format(checked)
+            )
+            log_critical(message)
+            raise FileNotFoundError(message)
 
         extension = os.path.splitext(self._bitstream_path)[1]
         if extension != ".bit":
@@ -142,6 +186,7 @@ class XEM(ABC):
         if self.xem.OpenBySerial(""):
             log_critical("Device is not opened!")
             raise ConnectionError("Device is not opened!")
+        self._opened = True
 
         device_info = ok.okTDeviceInfo()
         self.xem.GetDeviceInfo(device_info)
@@ -199,11 +244,123 @@ class XEM(ABC):
         """
         return self
 
+    def is_open(self) -> bool:
+        """
+        Return whether the underlying FrontPanel device handle is open.
+        """
+        return bool(self.xem.IsOpen())
+
+    def diagnostics(
+        self,
+        *,
+        console: Optional[Console] = None,
+        print_output: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Return and optionally print FPGA runtime diagnostics.
+
+        The returned dictionary is intended for tests and scripts. The default
+        printed output is a Rich panel/table for interactive use.
+        """
+        config = self.config
+        board = asdict(config) if is_dataclass(config) else dict(vars(config))
+
+        try:
+            is_open = bool(self.xem.IsOpen())
+        except Exception as exc:
+            is_open = "error: {}: {}".format(type(exc).__name__, exc)
+
+        data = {
+            "board": board,
+            "frontpanel": {
+                "version": getattr(self, "_frontpanel_version", "unknown"),
+                "is_open": is_open,
+            },
+            "bitstream": {
+                "path": getattr(self, "_bitstream_path", None),
+                "timestamp": getattr(self, "_bitstream_timestamp", None),
+            },
+            "endpoints": {
+                "wire": {
+                    "width": getattr(config, "wire_width", None),
+                    "auto_wire_in": getattr(self, "auto_wire_in", None),
+                    "auto_wire_out": getattr(self, "auto_wire_out", None),
+                },
+                "trigger": {
+                    "width": getattr(config, "trigger_width", None),
+                    "auto_trigger_out": getattr(self, "auto_trigger_out", None),
+                },
+                "pipe": {
+                    "width": getattr(config, "pipe_width", None),
+                },
+                "block_pipe": {
+                    "max_block_size": getattr(config, "max_bt_blocksize", None),
+                },
+            },
+        }
+
+        vadj_voltage_dict = getattr(self, "_vadj_voltage_dict", None)
+        if vadj_voltage_dict is not None:
+            data["board"]["vadj_voltage"] = vadj_voltage_dict
+
+        if print_output:
+            output_console = console or Console()
+            output_console.print(self._diagnostics_panel(data))
+
+        return data
+
+    @staticmethod
+    def _diagnostics_panel(data: Dict[str, Any]) -> Panel:
+        board_table = Table(title="Board", show_header=False, box=box.ASCII)
+        board_table.add_column("Field", style="cyan", no_wrap=True)
+        board_table.add_column("Value")
+        for key, value in data["board"].items():
+            board_table.add_row(str(key), str(value))
+
+        runtime_table = Table(title="Runtime", show_header=False, box=box.ASCII)
+        runtime_table.add_column("Field", style="cyan", no_wrap=True)
+        runtime_table.add_column("Value")
+        runtime_table.add_row("FrontPanel version", str(data["frontpanel"]["version"]))
+        runtime_table.add_row("IsOpen", str(data["frontpanel"]["is_open"]))
+        runtime_table.add_row("Bitstream path", str(data["bitstream"]["path"]))
+
+        endpoint_table = Table(title="Endpoints", show_header=True, box=box.ASCII)
+        endpoint_table.add_column("Type", style="cyan", no_wrap=True)
+        endpoint_table.add_column("Setting")
+        endpoint_table.add_column("Value")
+        for endpoint_type, settings in data["endpoints"].items():
+            for setting, value in settings.items():
+                endpoint_table.add_row(endpoint_type, setting, str(value))
+
+        return Panel(
+            Group(board_table, runtime_table, endpoint_table),
+            title="FPGA Diagnostics",
+            box=box.ASCII,
+        )
+
     def close(self) -> None:
         """
         Close the FPGA device.
         """
-        self.__exit__(None, None, None)
+        if not getattr(self, "_opened", False):
+            self._detach_close_finalizer()
+            return
+
+        if not self.is_open():
+            self._opened = False
+            self._detach_close_finalizer()
+            return
+
+        logger.info("Closing device")
+        if self._led_used:
+            logger.info("Turning off the LEDs before closing the device!")
+            self.SetLED(led_value=0, led_address=self._led_address)
+        try:
+            self.xem.Close()
+        finally:
+            self._opened = False
+            self._detach_close_finalizer()
+        logger.info("Device closed!")
 
     def __exit__(
         self,
@@ -222,12 +379,7 @@ class XEM(ABC):
         Returns:
             None
         """
-        logger.info("Closing device")
-        if self._led_used:
-            logger.info("Turning off the LEDs before closing the device!")
-            self.SetLED(led_value=0, led_address=self._led_address)
-        self.xem.Close()
-        logger.info("Device closed!")
+        self.close()
     
     def set_verbose_level(self, verbose_level: int) -> None:
         """
@@ -674,16 +826,20 @@ class XEM7310(XEM):
             Plus all exceptions from parent class __init__
         """
         super().__init__(bitstream_path=bitstream_path)
-        ok = get_ok()
+        try:
+            ok = get_ok()
 
-        target_product_id_list = [
-            ok.okCFrontPanel.brdXEM7310A75,
-            ok.okCFrontPanel.brdXEM7310A200,
-        ]
+            target_product_id_list = [
+                ok.okCFrontPanel.brdXEM7310A75,
+                ok.okCFrontPanel.brdXEM7310A200,
+            ]
 
-        if self.config.product_id not in target_product_id_list:
-            log_critical("Connected FPGA board is not a XEM7310A75/A100!")
-            raise TypeError("Connected FPGA board is not a XEM7310A75/A100!")
+            if self.config.product_id not in target_product_id_list:
+                log_critical("Connected FPGA board is not a XEM7310A75/A100!")
+                raise TypeError("Connected FPGA board is not a XEM7310A75/A100!")
+        except Exception:
+            self.close()
+            raise
 
     def _check_device_settings(self) -> None:
         """No additional settings to check for XEM7310."""
@@ -738,13 +894,17 @@ class XEM7360(XEM):
             Plus all exceptions from parent class __init__
         """
         super().__init__(bitstream_path=bitstream_path)
-        ok = get_ok()
+        try:
+            ok = get_ok()
 
-        target_product_id = ok.okCFrontPanel.brdXEM7360K160T
+            target_product_id = ok.okCFrontPanel.brdXEM7360K160T
 
-        if self.config.product_id != target_product_id:
-            log_critical("Connected FPGA board is not a XEM7360K160T!")
-            raise TypeError("Connected FPGA board is not a XEM7360K160T!")
+            if self.config.product_id != target_product_id:
+                log_critical("Connected FPGA board is not a XEM7360K160T!")
+                raise TypeError("Connected FPGA board is not a XEM7360K160T!")
+        except Exception:
+            self.close()
+            raise
 
     def _check_device_settings(self) -> None:
         """
