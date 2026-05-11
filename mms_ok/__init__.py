@@ -20,7 +20,6 @@ try:
 except PackageNotFoundError:
     __version__ = "0+unknown"
 
-import os
 import sys
 
 from loguru import logger
@@ -29,7 +28,7 @@ logger.remove()
 
 
 def _stderr_should_colorize() -> bool:
-    return os.name != "nt" and sys.stderr.isatty()
+    return sys.stderr.isatty()
 
 
 logger.add(

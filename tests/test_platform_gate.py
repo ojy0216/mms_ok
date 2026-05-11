@@ -1,22 +1,31 @@
 from __future__ import annotations
 
 import ast
+import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import Optional
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
-def _run_python(code: str) -> subprocess.CompletedProcess[str]:
+def _run_python(code: str, env: Optional[dict] = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, "-c", code],
         cwd=PROJECT_ROOT,
+        env=env,
         text=True,
         capture_output=True,
         check=False,
     )
+
+
+def _run_python_as_non_windows(code: str) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    env["MMS_OK_UNSUPPORTED_PLATFORM_SIGNAL"] = "posix"
+    return _run_python(code, env=env)
 
 
 def _assert_platform_gate_failure(result: subprocess.CompletedProcess[str]) -> None:
@@ -29,18 +38,15 @@ def _assert_platform_gate_failure(result: subprocess.CompletedProcess[str]) -> N
 
 
 def test_non_windows_package_import_fails_fast() -> None:
-    result = _run_python("import mms_ok")
+    result = _run_python_as_non_windows("import mms_ok")
 
     _assert_platform_gate_failure(result)
 
 
 def test_non_windows_module_execution_fails_before_menu() -> None:
-    result = subprocess.run(
-        [sys.executable, "-m", "mms_ok"],
-        cwd=PROJECT_ROOT,
-        text=True,
-        capture_output=True,
-        check=False,
+    result = _run_python_as_non_windows(
+        "import runpy\n"
+        "runpy.run_module('mms_ok', run_name='__main__', alter_sys=True)"
     )
 
     _assert_platform_gate_failure(result)
@@ -48,7 +54,7 @@ def test_non_windows_module_execution_fails_before_menu() -> None:
 
 
 def test_console_script_import_path_inherits_package_gate() -> None:
-    result = _run_python(
+    result = _run_python_as_non_windows(
         "from mms_ok.cli import main; raise SystemExit(main(['version']))"
     )
 
