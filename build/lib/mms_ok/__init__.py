@@ -1,7 +1,8 @@
 """Public package interface for mms_ok.
 
-The package keeps imports lightweight: FrontPanel setup is only attempted when
-hardware-backed classes are actually accessed.
+The package fails fast on unsupported runtime platforms before importing
+FrontPanel, diagnostics, or hardware-backed modules. Runtime-heavy public names
+remain lazy after the platform gate passes.
 """
 
 try:
@@ -13,14 +14,32 @@ except ImportError:  # pragma: no cover - Python 3.7 fallback
     def _metadata_version(package_name: str) -> str:
         return get_distribution(package_name).version
 
-from .ok_setup import copy_frontpanel_files
-
-setup_frontpanel = copy_frontpanel_files
 
 try:
     __version__ = _metadata_version("mms_ok")
 except PackageNotFoundError:
     __version__ = "0+unknown"
+
+import sys
+
+from loguru import logger
+
+logger.remove()
+
+
+def _stderr_should_colorize() -> bool:
+    return sys.stderr.isatty()
+
+
+logger.add(
+    sys.stderr,
+    format="[MMS OK] <green>{time:HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <level>{message}</level>",
+    colorize=_stderr_should_colorize(),
+)
+
+from ._platform_gate import enforce_windows_runtime
+
+enforce_windows_runtime(logger.critical)
 
 __all__ = [
     "BIST",
@@ -32,16 +51,6 @@ __all__ = [
     "setup_frontpanel",
 ]
 
-import sys
-from loguru import logger
-
-logger.remove()
-
-logger.add(
-    sys.stderr,
-    format="[MMS OK] <green>{time:HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <level>{message}</level>",
-)
-
 
 def __getattr__(name):
     if name == "BIST":
@@ -52,10 +61,10 @@ def __getattr__(name):
         from .fpga import XEM7310, XEM7360
 
         return {"XEM7310": XEM7310, "XEM7360": XEM7360}[name]
-    if name == "copy_frontpanel_files":
+    if name in {"copy_frontpanel_files", "setup_frontpanel"}:
+        from .ok_setup import copy_frontpanel_files
+
         return copy_frontpanel_files
-    if name == "setup_frontpanel":
-        return setup_frontpanel
     if name == "list_devices":
         from .devices import list_devices
 
