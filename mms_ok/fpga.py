@@ -822,7 +822,7 @@ class XEM7310(XEM):
             bitstream_path (str): Path to the bitstream file (.bit)
 
         Raises:
-            TypeError: If connected device is not a XEM7310A75/A100
+            TypeError: If connected device is not a XEM7310A75/A200
             Plus all exceptions from parent class __init__
         """
         super().__init__(bitstream_path=bitstream_path)
@@ -835,8 +835,8 @@ class XEM7310(XEM):
             ]
 
             if self.config.product_id not in target_product_id_list:
-                log_critical("Connected FPGA board is not a XEM7310A75/A100!")
-                raise TypeError("Connected FPGA board is not a XEM7310A75/A100!")
+                log_critical("Connected FPGA board is not a XEM7310A75/A200!")
+                raise TypeError("Connected FPGA board is not a XEM7310A75/A200!")
         except Exception:
             self.close()
             raise
