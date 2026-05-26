@@ -7,14 +7,17 @@ import pytest
 from rich.console import Console
 
 from mms_ok import fpga
+from mms_ok import fpga_base
 from mms_ok import fpga_config
+from mms_ok import fpga_xem7310
+from mms_ok import fpga_xem7360
 
 
 class FakeDeviceInfo:
     def __init__(self) -> None:
-        self.productName = "XEM7310"
+        self.productName = FakeFrontPanel.product_name
         self.serialNumber = "1234"
-        self.productID = FakeFrontPanel.brdXEM7310A75
+        self.productID = FakeFrontPanel.product_id
         self.deviceInterface = 3
         self.usbSpeed = 3
         self.wireWidth = 32
@@ -31,6 +34,8 @@ class FakeFrontPanel:
     open_error = 0
     configure_error = 0
     frontpanel_enabled = True
+    product_name = "XEM7310"
+    product_id = brdXEM7310A75
 
     def __init__(self) -> None:
         self.open = False
@@ -65,11 +70,27 @@ class FakeFrontPanel:
         self.close_calls += 1
         self.open = False
 
+    @staticmethod
+    def GetDeviceSettings(handle, device_settings) -> None:
+        return None
+
+
+class FakeDeviceSettings:
+    def GetInt(self, key: str) -> int:
+        values = {
+            "XEM7360_VADJ1_VOLTAGE": 120,
+            "XEM7360_VADJ2_VOLTAGE": 120,
+            "XEM7360_VADJ3_VOLTAGE": 120,
+            "XEM7360_VADJ_MODE": 0b0010_1010,
+        }
+        return values[key]
+
 
 class FakeOk:
     OK_INTERFACE_USB3 = 3
     okCFrontPanel = FakeFrontPanel
     okTDeviceInfo = FakeDeviceInfo
+    okCDeviceSettings = FakeDeviceSettings
 
 
 class LifecycleXEM(fpga.XEM):
@@ -90,11 +111,13 @@ def fake_frontpanel(monkeypatch):
     FakeFrontPanel.open_error = 0
     FakeFrontPanel.configure_error = 0
     FakeFrontPanel.frontpanel_enabled = True
+    FakeFrontPanel.product_name = "XEM7310"
+    FakeFrontPanel.product_id = FakeFrontPanel.brdXEM7310A75
     LifecycleXEM.check_error = None
 
-    monkeypatch.setattr(fpga, "get_ok", lambda: FakeOk)
+    monkeypatch.setattr(fpga_base, "get_ok", lambda: FakeOk)
     monkeypatch.setattr(fpga_config, "get_ok", lambda: FakeOk)
-    monkeypatch.setattr(fpga, "print_fpga_overview", lambda **kwargs: None)
+    monkeypatch.setattr(fpga_base, "print_fpga_overview", lambda **kwargs: None)
 
 
 @pytest.fixture
@@ -171,6 +194,39 @@ def test_explicit_close_detaches_fallback_finalizer():
 
     assert finalizer.alive is False
     assert handle.close_calls == 1
+
+
+def test_xem7310_constructor_uses_board_module_get_ok(monkeypatch, bitstream_path):
+    monkeypatch.setattr(fpga_xem7310, "get_ok", lambda: FakeOk)
+
+    device = fpga.XEM7310(bitstream_path)
+
+    try:
+        assert isinstance(device, fpga.XEM)
+        assert device.config.product_id == FakeFrontPanel.brdXEM7310A75
+        assert device.is_open() is True
+    finally:
+        device.close()
+
+
+def test_xem7360_constructor_uses_board_module_get_ok(monkeypatch, bitstream_path):
+    FakeFrontPanel.product_name = "XEM7360"
+    FakeFrontPanel.product_id = FakeFrontPanel.brdXEM7360K160T
+    monkeypatch.setattr(fpga_xem7360, "get_ok", lambda: FakeOk)
+
+    device = fpga.XEM7360(bitstream_path)
+
+    try:
+        assert isinstance(device, fpga.XEM)
+        assert device.config.product_id == FakeFrontPanel.brdXEM7360K160T
+        assert device._vadj_voltage_dict == {
+            "vadj1": 1.2,
+            "vadj2": 1.2,
+            "vadj3": 1.2,
+        }
+        assert device.is_open() is True
+    finally:
+        device.close()
 
 
 def test_configure_failure_after_open_closes_handle(bitstream_path):
