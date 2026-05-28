@@ -181,6 +181,8 @@ def test_doctor_success_reports_api_and_device_count(monkeypatch, tmp_path, caps
     assert "9.9.9" in captured.out
     assert "Device count" in captured.out
     assert "2" in captured.out
+    assert "CORRECT" in captured.out
+    assert "INCORRECT" not in captured.out
 
 
 def test_doctor_failure_reports_guidance(monkeypatch, tmp_path, capsys):
@@ -212,6 +214,7 @@ def test_doctor_failure_reports_guidance(monkeypatch, tmp_path, capsys):
     assert "missing" in captured.out
     assert "mms_ok reset-cache" in captured.out
     assert "64-bit Python" in captured.out
+    assert "INCORRECT" in captured.out
 
 
 def test_doctor_fails_when_frontpanel_api_probe_fails(
@@ -355,6 +358,8 @@ def test_doctor_warning_only_zero_devices_exits_success(
     assert status == 0
     assert "Device count" in captured.out
     assert "0" in captured.out
+    assert "CORRECT" in captured.out
+    assert "INCORRECT" not in captured.out
 
 
 def test_reset_cache_uses_resolved_default_path(monkeypatch, capsys):
