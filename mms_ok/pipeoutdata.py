@@ -3,17 +3,21 @@ import numpy as np
 from .diagnostics import log_error
 
 
-def reorder_hex_words(hex_str: str) -> str:
-    if len(hex_str) % 8 != 0:
-        log_error("Hexadecimal string length must be a multiple of 8!")
-        raise ValueError("Hexadecimal string length must be a multiple of 8!")
+def reorder_hex_words(hex_str: str, word_byte_width: int = 4) -> str:
+    word_hex_width = word_byte_width * 2
+    if len(hex_str) % word_hex_width != 0:
+        message = (
+            f"Hexadecimal string length must be a multiple of {word_hex_width}!"
+        )
+        log_error(message)
+        raise ValueError(message)
 
     return "".join(
-        hex_str[i + 6 : i + 8]
-        + hex_str[i + 4 : i + 6]
-        + hex_str[i + 2 : i + 4]
-        + hex_str[i : i + 2]
-        for i in range(0, len(hex_str), 8)
+        "".join(
+            hex_str[i + j : i + j + 2]
+            for j in range(word_hex_width - 2, -1, -2)
+        )
+        for i in range(0, len(hex_str), word_hex_width)
     )
 
 
@@ -22,7 +26,7 @@ class PipeOutData:
     Represents data received from a pipe out interface.
 
     Attributes:
-        error_code (int): The error code associated with the data.
+        error_code (int): The successful FrontPanel return code associated with the data.
         raw_data (bytearray): The raw binary data received.
         hex_data (str): Hexadecimal string representation of the data.
 
@@ -35,13 +39,17 @@ class PipeOutData:
     """
 
     def __init__(
-        self, error_code: int, raw_data: bytearray, reorder_str: bool = False
+        self,
+        error_code: int,
+        raw_data: bytearray,
+        reorder_str: bool = False,
+        word_byte_width: int = 4,
     ) -> None:
         """
         Initialize a PipeOutData object.
 
         Args:
-            error_code (int): The error code associated with the data.
+            error_code (int): The successful FrontPanel return code associated with the data.
             raw_data (bytearray): The raw binary data received.
             reorder_str (bool): Whether to reorder the hex string representation.
         """
@@ -49,7 +57,9 @@ class PipeOutData:
         self.__raw_data = raw_data
 
         hex_str = raw_data.hex().upper()
-        self.__hex_data = reorder_hex_words(hex_str) if reorder_str else hex_str
+        self.__hex_data = (
+            reorder_hex_words(hex_str, word_byte_width) if reorder_str else hex_str
+        )
 
     @property
     def error_code(self) -> int:
@@ -68,8 +78,8 @@ class PipeOutData:
         return max(self.__error_code, 0)
 
     def __repr__(self) -> str:
-        return "PipeOutData(error_code={}, transfer_byte={}, hex_data={!r})".format(
-            self.error_code, self.transfer_byte, self.hex_data
+        return "PipeOutData(transfer_byte={}, hex_data={!r})".format(
+            self.transfer_byte, self.hex_data
         )
 
     def __eq__(self, other) -> bool:

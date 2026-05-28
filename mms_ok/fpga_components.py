@@ -25,7 +25,28 @@ from .address import (
 from .diagnostics import log_error
 from .ok_setup import get_ok
 from .pipeoutdata import PipeOutData, reorder_hex_words
-from .validation import validate_address, validate_block_size, validate_wire_value
+from .validation import (
+    get_block_pipe_constraints,
+    validate_address,
+    validate_block_size,
+    validate_wire_value,
+)
+
+
+def _format_hex_for_bit_width(value: int, bit_width: int) -> str:
+    hex_digits = max(1, (bit_width + 3) // 4)  # Calculate required hex digits
+    separator_count = (hex_digits - 1) // 4
+    display_width = hex_digits + separator_count
+    return f"0x{value:0{display_width}_X}"
+
+
+def _check_error_code(error_code: int, operation: str, failure_message: str) -> int:
+    if error_code < 0:
+        ok = get_ok()
+        error_str = ok.okCFrontPanel.GetErrorString(error_code)
+        log_error(f"{operation} failed - {error_str}")
+        raise RuntimeError(f"{failure_message} ({error_str})")
+    return error_code
 
 
 class WireOperations:
@@ -74,21 +95,18 @@ class WireOperations:
             mask = (1 << self.wire_width) - 1
         else:
             if not 0 <= mask < (1 << self.wire_width):
-                hex_str_len = int(2 * (np.log2(self.wire_width) - 1))
                 message = (
                     f"Invalid mask (0x{mask:0_X})! It should be in "
-                    f"0x{0:0{hex_str_len}_X} ~ 0x{((1 << self.wire_width) - 1):0{hex_str_len}_X}"
+                    f"{_format_hex_for_bit_width(0, self.wire_width)} ~ "
+                    f"{_format_hex_for_bit_width((1 << self.wire_width) - 1, self.wire_width)}"
                 )
                 log_error(message)
                 raise ValueError(message)
 
         error_code = self.xem.SetWireInValue(ep_addr, value, mask)
-        if error_code < 0:
-            ok = get_ok()
-            log_error(
-                f"SetWireInValue failed - {ok.okCFrontPanel.GetErrorString(error_code)}",
-            )
-        return error_code
+        return _check_error_code(
+            error_code, "SetWireInValue", "Failed to set wire-in value"
+        )
 
     def update_wire_ins(self) -> int:
         """
@@ -101,12 +119,9 @@ class WireOperations:
             int: Error code (0 on success)
         """
         error_code = self.xem.UpdateWireIns()
-        if error_code < 0:
-            ok = get_ok()
-            log_error(
-                f"UpdateWireIns failed - {ok.okCFrontPanel.GetErrorString(error_code)}",
-            )
-        return error_code
+        return _check_error_code(
+            error_code, "UpdateWireIns", "Failed to update wire-ins"
+        )
 
     def update_wire_outs(self) -> int:
         """
@@ -118,12 +133,9 @@ class WireOperations:
             int: Error code (0 on success)
         """
         error_code = self.xem.UpdateWireOuts()
-        if error_code < 0:
-            ok = get_ok()
-            log_error(
-                f"UpdateWireOuts failed - {ok.okCFrontPanel.GetErrorString(error_code)}",
-            )
-        return error_code
+        return _check_error_code(
+            error_code, "UpdateWireOuts", "Failed to update wire-outs"
+        )
 
     def get_wire_out(self, ep_addr: int) -> int:
         """
@@ -142,7 +154,10 @@ class WireOperations:
             update_wire_outs() must be called before this method to get current values.
         """
         validate_address(WIRE_OUT_START, WIRE_OUT_END, ep_addr)
-        return self.xem.GetWireOutValue(ep_addr)
+        return_data = self.xem.GetWireOutValue(ep_addr)
+        error_code = self.xem.GetLastError()
+        _check_error_code(error_code, "GetWireOutValue", "Failed to get wire-out value")
+        return return_data
 
 
 class TriggerOperations:
@@ -191,12 +206,9 @@ class TriggerOperations:
             raise ValueError(message)
 
         error_code = self.xem.ActivateTriggerIn(ep_addr, bit)
-        if error_code < 0:
-            ok = get_ok()
-            log_error(
-                f"ActivateTriggerIn failed - {ok.okCFrontPanel.GetErrorString(error_code)}",
-            )
-        return error_code
+        return _check_error_code(
+            error_code, "ActivateTriggerIn", "Failed to activate trigger-in"
+        )
 
     def update_trigger_outs(self) -> int:
         """
@@ -208,12 +220,9 @@ class TriggerOperations:
             int: Error code (0 on success)
         """
         error_code = self.xem.UpdateTriggerOuts()
-        if error_code < 0:
-            ok = get_ok()
-            log_error(
-                f"UpdateTriggerOuts failed - {ok.okCFrontPanel.GetErrorString(error_code)}",
-            )
-        return error_code
+        return _check_error_code(
+            error_code, "UpdateTriggerOuts", "Failed to update trigger-outs"
+        )
 
     def is_triggered(self, ep_addr: int, mask: int) -> bool:
         """
@@ -238,7 +247,8 @@ class TriggerOperations:
             hex_str_len = int(2 * (np.log2(self.trigger_width) - 1))
             message = (
                 f"Invalid mask (0x{mask:0_X})! It should be in "
-                f"0x{0:0{hex_str_len}_X} ~ 0x{((1 << self.trigger_width) - 1):0{hex_str_len}_X}"
+                f"{_format_hex_for_bit_width(0, self.trigger_width)} ~ "
+                f"{_format_hex_for_bit_width((1 << self.trigger_width) - 1, self.trigger_width)}"
             )
             log_error(message)
             raise ValueError(message)
@@ -370,12 +380,9 @@ class PipeOperations:
         prepared_data = self._prepare_data(data, reorder_str)
 
         error_code = self.xem.WriteToPipeIn(ep_addr, prepared_data)
-        if error_code < 0:
-            ok = get_ok()
-            log_error(
-                f"WriteToPipeIn failed - {ok.okCFrontPanel.GetErrorString(error_code)}",
-            )
-        return error_code
+        return _check_error_code(
+            error_code, "WriteToPipeIn", "Failed to write to pipe-in"
+        )
 
     def read_from_pipe_out(
         self, ep_addr: int, data: Union[int, bytearray], reorder_str: bool = True
@@ -389,21 +396,18 @@ class PipeOperations:
             reorder_str (bool): Whether to reorder received string data
 
         Returns:
-            PipeOutData: Object containing read data and error code
+            PipeOutData: Object containing read data and successful return code
 
         Raises:
             ValueError: If endpoint address or buffer format is invalid
+            RuntimeError: If the FrontPanel read operation returns an error code
         """
         validate_address(PIPE_OUT_START, PIPE_OUT_END, ep_addr)
 
         buffer = self._prepare_read_buffer(data)
 
         error_code = self.xem.ReadFromPipeOut(ep_addr, buffer)
-        if error_code < 0:
-            ok = get_ok()
-            log_error(
-                f"ReadFromPipeOut failed - {ok.okCFrontPanel.GetErrorString(error_code)}",
-            )
+        _check_error_code(error_code, "ReadFromPipeOut", "Failed to read from pipe-out")
 
         return PipeOutData(
             error_code=error_code, raw_data=buffer, reorder_str=reorder_str
@@ -421,7 +425,13 @@ class BlockPipeOperations:
         xem (ok.okCFrontPanel): Low-level interface to the FPGA device
     """
 
-    def __init__(self, xem: ok.okCFrontPanel, bt_max_blocksize: int):
+    def __init__(
+        self,
+        xem: ok.okCFrontPanel,
+        bt_max_blocksize: int,
+        usb_speed: str = "SUPER",
+        device_interface: str = "USB 3",
+    ):
         """
         Initialize block pipe operations interface.
 
@@ -431,6 +441,88 @@ class BlockPipeOperations:
         self.xem = xem
         self.pipe_ops = PipeOperations(xem)
         self.bt_max_blocksize = bt_max_blocksize
+        self.usb_speed = usb_speed
+        self.device_interface = device_interface
+
+    def _word_byte_width(self) -> int:
+        interface = str(self.device_interface).upper().replace(" ", "")
+        return 2 if interface.startswith("USB2") else 4
+
+    def _prepare_data(
+        self, data: Union[str, bytearray, np.ndarray], reorder_str: bool
+    ) -> bytearray:
+        if isinstance(data, str):
+            if reorder_str:
+                data = bytearray.fromhex(
+                    reorder_hex_words(data, self._word_byte_width())
+                )
+            else:
+                data = bytearray.fromhex(data)
+        elif isinstance(data, np.ndarray):
+            data = bytearray(data)
+        elif not isinstance(data, bytearray):
+            raise TypeError("Data must be a string, bytearray, or numpy array")
+        return data
+
+    def _prepare_read_buffer(self, data: Union[int, bytearray]) -> bytearray:
+        if isinstance(data, int):
+            return bytearray(data)
+        if isinstance(data, bytearray):
+            return data
+        raise TypeError("Data must be an integer or bytearray")
+
+    def _select_block_size(self, transfer_byte: int) -> int:
+        constraints = get_block_pipe_constraints(
+            self.bt_max_blocksize,
+            usb_speed=self.usb_speed,
+            device_interface=self.device_interface,
+        )
+
+        if not constraints.uses_block_size:
+            if transfer_byte % constraints.transfer_multiple != 0:
+                message = (
+                    f"Transfer byte must be a multiple of "
+                    f"{constraints.transfer_multiple} for "
+                    f"{constraints.description} block pipes, got {transfer_byte}"
+                )
+                log_error(message)
+                raise ValueError(message)
+            return constraints.transfer_multiple
+
+        max_block_size = constraints.max_block_size
+        if transfer_byte > 0:
+            max_block_size = min(max_block_size, transfer_byte)
+
+        if constraints.requires_power_of_two:
+            block_size = 1 << (max_block_size.bit_length() - 1)
+            while block_size >= constraints.min_block_size:
+                if transfer_byte % block_size == 0:
+                    return block_size
+                block_size //= 2
+        else:
+            block_size = max_block_size - (
+                max_block_size % constraints.block_size_multiple
+            )
+            while block_size >= constraints.min_block_size:
+                if transfer_byte % block_size == 0:
+                    return block_size
+                block_size -= constraints.block_size_multiple
+
+        if transfer_byte % constraints.transfer_multiple != 0:
+            message = (
+                f"Transfer byte must be a multiple of "
+                f"{constraints.transfer_multiple} for "
+                f"{constraints.description} block pipes, got {transfer_byte}"
+            )
+            log_error(message)
+            raise ValueError(message)
+
+        message = (
+            f"Transfer byte must be an integer multiple of a valid block size, "
+            f"got {transfer_byte}"
+        )
+        log_error(message)
+        raise ValueError(message)
 
     def write_to_block_pipe_in(
         self,
@@ -456,24 +548,23 @@ class BlockPipeOperations:
         """
         validate_address(BLOCK_PIPE_IN_START, BLOCK_PIPE_IN_END, ep_addr)
 
-        prepared_data = self.pipe_ops._prepare_data(data, reorder_str)
+        prepared_data = self._prepare_data(data, reorder_str)
 
         if block_size is None:
-            block_size = (
-                min(len(prepared_data), self.bt_max_blocksize)
-                if self.bt_max_blocksize > 0
-                else len(prepared_data)
-            )
+            block_size = self._select_block_size(len(prepared_data))
         else:
-            validate_block_size(block_size, self.bt_max_blocksize)
+            validate_block_size(
+                block_size,
+                self.bt_max_blocksize,
+                len(prepared_data),
+                usb_speed=self.usb_speed,
+                device_interface=self.device_interface,
+            )
 
         error_code = self.xem.WriteToBlockPipeIn(ep_addr, block_size, prepared_data)
-        if error_code < 0:
-            ok = get_ok()
-            log_error(
-                f"WriteToBlockPipeIn failed - {ok.okCFrontPanel.GetErrorString(error_code)}",
-            )
-        return error_code
+        return _check_error_code(
+            error_code, "WriteToBlockPipeIn", "Failed to write to block pipe-in"
+        )
 
     def read_from_block_pipe_out(
         self,
@@ -492,31 +583,35 @@ class BlockPipeOperations:
             reorder_str (bool): Whether to reorder received string data
 
         Returns:
-            PipeOutData: Object containing read data and error code
+            PipeOutData: Object containing read data and successful return code
 
         Raises:
             ValueError: If endpoint address or buffer format is invalid
+            RuntimeError: If the FrontPanel read operation returns an error code
         """
         validate_address(BLOCK_PIPE_OUT_START, BLOCK_PIPE_OUT_END, ep_addr)
 
-        buffer = self.pipe_ops._prepare_read_buffer(data)
+        buffer = self._prepare_read_buffer(data)
 
         if block_size is None:
-            block_size = (
-                min(len(buffer), self.bt_max_blocksize)
-                if self.bt_max_blocksize > 0
-                else len(buffer)
-            )
+            block_size = self._select_block_size(len(buffer))
         else:
-            validate_block_size(block_size, self.bt_max_blocksize)
+            validate_block_size(
+                block_size,
+                self.bt_max_blocksize,
+                len(buffer),
+                usb_speed=self.usb_speed,
+                device_interface=self.device_interface,
+            )
 
         error_code = self.xem.ReadFromBlockPipeOut(ep_addr, block_size, buffer)
-        if error_code < 0:
-            ok = get_ok()
-            log_error(
-                f"ReadFromBlockPipeOut failed - {ok.okCFrontPanel.GetErrorString(error_code)}",
-            )
+        _check_error_code(
+            error_code, "ReadFromBlockPipeOut", "Failed to read from block pipe-out"
+        )
 
         return PipeOutData(
-            error_code=error_code, raw_data=buffer, reorder_str=reorder_str
+            error_code=error_code,
+            raw_data=buffer,
+            reorder_str=reorder_str,
+            word_byte_width=self._word_byte_width(),
         )

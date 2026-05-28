@@ -7,6 +7,23 @@ from loguru import logger
 from .ok_setup import get_ok
 
 
+def _lookup_label(values, index: int) -> str:
+    try:
+        return values[index]
+    except (IndexError, TypeError):
+        return values[0]
+
+
+def _max_bt_blocksize(device_interface: int, usb_speed: int) -> int:
+    if device_interface == 1:  # FX2 / USB 2.0
+        return 64 if usb_speed == 1 else 1024 if usb_speed == 2 else 64
+    if device_interface == 2:  # PCIe
+        return 1024
+    if device_interface == 3:  # FX3 / USB 3.0
+        return {1: 64, 2: 1024, 3: 16384}.get(usb_speed, 16384)
+    return -1
+
+
 @dataclass
 class FPGAConfig:
     """
@@ -49,15 +66,18 @@ class FPGAConfig:
         """
         interface_list = ["Unknown", "USB 2", "PCIe", "USB 3"]
         usb_speed_list = ["Unknown", "FULL", "HIGH", "SUPER"]
-        bt_max_blocksize_list = [-1, 64, 1024, 16384]
         return cls(
             product_name=device_info.productName,
             serial_number=device_info.serialNumber,
             product_id=device_info.productID,
             device_interface=device_info.deviceInterface,
-            device_interface_str=interface_list[device_info.deviceInterface],
-            max_bt_blocksize=bt_max_blocksize_list[device_info.deviceInterface],
-            usb_speed=usb_speed_list[device_info.usbSpeed],
+            device_interface_str=_lookup_label(
+                interface_list, device_info.deviceInterface
+            ),
+            max_bt_blocksize=_max_bt_blocksize(
+                device_info.deviceInterface, device_info.usbSpeed
+            ),
+            usb_speed=_lookup_label(usb_speed_list, device_info.usbSpeed),
             wire_width=device_info.wireWidth,
             trigger_width=device_info.triggerWidth,
             pipe_width=device_info.pipeWidth,

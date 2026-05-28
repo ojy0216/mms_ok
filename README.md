@@ -323,7 +323,10 @@ Common methods on `XEM7310` and `XEM7360` include:
 - Pipes: `WriteToPipeIn(...)`, `ReadFromPipeOut(...)`, `WriteToBlockPipeIn(...)`, `ReadFromBlockPipeOut(...)`.
 - Registers: `WriteRegister(...)`, `ReadRegister(...)`.
 
-`ReadFromPipeOut` and `ReadFromBlockPipeOut` return a `PipeOutData` object with `error_code`, `transfer_byte`, `raw_data`, `hex_data`, and `to_ndarray(dtype)`.
+On success, `ReadFromPipeOut` and `ReadFromBlockPipeOut` return a `PipeOutData`
+object with `error_code`, `transfer_byte`, `raw_data`, `hex_data`, and
+`to_ndarray(dtype)`. Negative Opal Kelly return codes raise `RuntimeError`
+instead of returning `PipeOutData(error_code=<negative>)`.
 
 ## Contact
 

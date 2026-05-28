@@ -100,7 +100,10 @@ class XEM(ABC):
             self.trigger_ops = TriggerOperations(self.xem, self.config.trigger_width)
             self.pipe_ops = PipeOperations(self.xem)
             self.block_pipe_ops = BlockPipeOperations(
-                self.xem, self.config.max_bt_blocksize
+                self.xem,
+                self.config.max_bt_blocksize,
+                usb_speed=self.config.usb_speed,
+                device_interface=self.config.device_interface_str,
             )
 
             self._check_device_settings()
@@ -595,10 +598,11 @@ class XEM(ABC):
             reorder_str (bool): If True, reorder received string data (default: True)
 
         Returns:
-            PipeOutData: Object containing read data and error code
+            PipeOutData: Object containing read data and successful return code
 
         Raises:
             ValueError: If data buffer format is invalid
+            RuntimeError: If the FrontPanel read operation returns an error code
         """
         result = self.pipe_ops.read_from_pipe_out(ep_addr, data, reorder_str)
         if self.verbose_level > 0:
@@ -661,10 +665,11 @@ class XEM(ABC):
             reorder_str (bool): If True, reorder received string data (default: True)
 
         Returns:
-            PipeOutData: Object containing read data and error code
+            PipeOutData: Object containing read data and successful return code
 
         Raises:
             ValueError: If data buffer format is invalid
+            RuntimeError: If the FrontPanel read operation returns an error code
         """
         result = self.block_pipe_ops.read_from_block_pipe_out(
             ep_addr, data, block_size, reorder_str
