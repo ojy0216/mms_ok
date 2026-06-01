@@ -76,6 +76,10 @@ class FakeFrontPanel:
     def GetDeviceSettings(handle, device_settings) -> None:
         return None
 
+    @staticmethod
+    def GetErrorString(error_code: int) -> str:
+        return f"mock error {error_code}"
+
 
 class FakeDeviceSettings:
     def GetInt(self, key: str) -> int:
@@ -370,6 +374,42 @@ def test_missing_filename_bitstream_reports_checked_parent_bitstreams_path(
     message = str(exc_info.value)
     assert "../bitstreams" in message
     assert str(missing.resolve()) in message
+
+
+def test_write_register_logs_and_raises_on_negative_error_code(monkeypatch):
+    handle = FakeFrontPanel()
+
+    def write_register(addr: int, data: int) -> int:
+        return -1
+
+    handle.WriteRegister = write_register
+    device = make_uninitialized_device(handle)
+    messages = []
+    monkeypatch.setattr(fpga_base, "log_error", lambda message: messages.append(message))
+
+    with pytest.raises(RuntimeError, match="Failed to write register value"):
+        device.WriteRegister(0x1000, 0x1234)
+
+    assert len(messages) == 1
+    assert "WriteRegister failed - mock error -1" in messages[0]
+
+
+def test_read_register_logs_and_raises_on_negative_error_code(monkeypatch):
+    handle = FakeFrontPanel()
+
+    def read_register(addr: int) -> int:
+        return -1
+
+    handle.ReadRegister = read_register
+    device = make_uninitialized_device(handle)
+    messages = []
+    monkeypatch.setattr(fpga_base, "log_error", lambda message: messages.append(message))
+
+    with pytest.raises(RuntimeError, match="Failed to read register value"):
+        device.ReadRegister(0x1000)
+
+    assert len(messages) == 1
+    assert "ReadRegister failed - mock error -1" in messages[0]
 
 
 def test_diagnostics_returns_required_keys(bitstream_path):

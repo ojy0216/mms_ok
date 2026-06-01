@@ -126,6 +126,13 @@ class XEM(ABC):
                 self._detach_close_finalizer()
             raise
 
+    def _check_error_code(self, error_code: int, operation: str, failure_message: str) -> int:
+        if error_code < 0:
+            error_str = get_ok().okCFrontPanel.GetErrorString(error_code)
+            log_error(f"{operation} failed - {error_str}")
+            raise RuntimeError(f"{failure_message} ({error_str})")
+        return error_code
+
     @staticmethod
     def _finalize_xem_handle(xem) -> None:
         try:
@@ -825,11 +832,15 @@ class XEM(ABC):
 
         Returns:
             int: Error code (0 on success)
+
+        Raises:
+            RuntimeError: If the register write operation returns an error code
         """
         validate_address(0, 2**32 - 1, addr)
         validate_wire_value(data, 32)
 
         error_code = self.xem.WriteRegister(addr, data)
+        self._check_error_code(error_code, "WriteRegister", "Failed to write register value")
         if self.verbose_level > 0:
             logger.debug(f"WriteRegister >> Addr {hex(addr)} | Value: {data}")
         return error_code
@@ -843,10 +854,14 @@ class XEM(ABC):
 
         Returns:
             int: Value read from the register
+
+        Raises:
+            RuntimeError: If the register read operation returns an error code
         """
         validate_address(0, 2**32 - 1, addr)
 
         value = self.xem.ReadRegister(addr)
+        self._check_error_code(value, "ReadRegister", "Failed to read register value")
         if self.verbose_level > 0:
             logger.debug(f"ReadRegister >> Addr {hex(addr)} | Value: {value}")
         return value
