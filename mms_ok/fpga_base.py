@@ -24,6 +24,7 @@ from .fpga_components import (
     PipeOperations,
     TriggerOperations,
     WireOperations,
+    _ENDIAN_OMITTED,
 )
 from .fpga_config import FPGAConfig
 from .ok_setup import get_frontpanel_version, get_ok
@@ -559,7 +560,8 @@ class XEM(ABC):
         self,
         ep_addr: int,
         data: Union[str, bytearray, np.ndarray],
-        reorder_str: bool = True,
+        endian: Union[str, bool] = _ENDIAN_OMITTED,
+        reorder_str: Optional[bool] = None,
     ) -> int:
         """
         Write data to a pipe-in endpoint.
@@ -569,7 +571,8 @@ class XEM(ABC):
         Args:
             ep_addr (int): Pipe endpoint address
             data (Union[str, bytearray]): Data to write
-            reorder_str (bool): If True, reorder string data for FPGA (default: True)
+            endian (str): Byte order used for string and integer numpy array data
+            reorder_str (bool): Deprecated; use endian instead
 
         Returns:
             int: Number of bytes written
@@ -577,7 +580,9 @@ class XEM(ABC):
         Raises:
             ValueError: If data format is invalid
         """
-        written = self.pipe_ops.write_to_pipe_in(ep_addr, data, reorder_str)
+        written = self.pipe_ops.write_to_pipe_in(
+            ep_addr, data, endian, reorder_str=reorder_str
+        )
         if self.verbose_level > 0:
             logger.debug(
                 f"WriteToPipeIn >> Addr {hex(ep_addr)} | Wrote: {written} bytes"
@@ -585,7 +590,11 @@ class XEM(ABC):
         return written
 
     def ReadFromPipeOut(
-        self, ep_addr: int, data: Union[int, bytearray], reorder_str: bool = True
+        self,
+        ep_addr: int,
+        data: Union[int, bytearray],
+        endian: Union[str, bool] = _ENDIAN_OMITTED,
+        reorder_str: Optional[bool] = None,
     ) -> PipeOutData:
         """
         Read data from a pipe-out endpoint.
@@ -595,7 +604,8 @@ class XEM(ABC):
         Args:
             ep_addr (int): Pipe endpoint address
             data (Union[str, bytearray]): Buffer to store read data
-            reorder_str (bool): If True, reorder received string data (default: True)
+            endian (str): Byte order used for formatted hex word data
+            reorder_str (bool): Deprecated; use endian instead
 
         Returns:
             PipeOutData: Object containing read data and successful return code
@@ -604,7 +614,9 @@ class XEM(ABC):
             ValueError: If data buffer format is invalid
             RuntimeError: If the FrontPanel read operation returns an error code
         """
-        result = self.pipe_ops.read_from_pipe_out(ep_addr, data, reorder_str)
+        result = self.pipe_ops.read_from_pipe_out(
+            ep_addr, data, endian, reorder_str=reorder_str
+        )
         if self.verbose_level > 0:
             logger.debug(
                 f"ReadFromPipeOut >>  Addr {hex(ep_addr)} | Read: {result.error_code} bytes"
@@ -616,7 +628,8 @@ class XEM(ABC):
         ep_addr: int,
         data: Union[str, bytearray, np.ndarray],
         block_size: int = None,
-        reorder_str: bool = True,
+        endian: Union[str, bool] = _ENDIAN_OMITTED,
+        reorder_str: Optional[bool] = None,
     ) -> int:
         """
         Write data to a block pipe-in endpoint.
@@ -628,7 +641,8 @@ class XEM(ABC):
             ep_addr (int): Block pipe endpoint address
             data (Union[str, bytearray]): Data block to write
             block_size (int): Number of bytes to write to the pipe
-            reorder_str (bool): If True, reorder string data for FPGA (default: True)
+            endian (str): Byte order used for string and integer numpy array data
+            reorder_str (bool): Deprecated; use endian instead
 
         Returns:
             int: Number of bytes written
@@ -637,7 +651,7 @@ class XEM(ABC):
             ValueError: If data format is invalid
         """
         written = self.block_pipe_ops.write_to_block_pipe_in(
-            ep_addr, data, block_size, reorder_str=reorder_str
+            ep_addr, data, block_size, endian=endian, reorder_str=reorder_str
         )
         if self.verbose_level > 0:
             logger.debug(
@@ -650,7 +664,8 @@ class XEM(ABC):
         ep_addr: int,
         data: Union[int, bytearray],
         block_size: int = None,
-        reorder_str: bool = True,
+        endian: Union[str, bool] = _ENDIAN_OMITTED,
+        reorder_str: Optional[bool] = None,
     ) -> PipeOutData:
         """
         Read data from a block pipe-out endpoint.
@@ -662,7 +677,8 @@ class XEM(ABC):
             ep_addr (int): Block pipe endpoint address
             data (Union[int, bytearray]): Buffer to store read data
             block_size (int): Number of bytes to read from the pipe
-            reorder_str (bool): If True, reorder received string data (default: True)
+            endian (str): Byte order used for formatted hex word data
+            reorder_str (bool): Deprecated; use endian instead
 
         Returns:
             PipeOutData: Object containing read data and successful return code
@@ -672,7 +688,7 @@ class XEM(ABC):
             RuntimeError: If the FrontPanel read operation returns an error code
         """
         result = self.block_pipe_ops.read_from_block_pipe_out(
-            ep_addr, data, block_size, reorder_str
+            ep_addr, data, block_size, endian=endian, reorder_str=reorder_str
         )
         if self.verbose_level > 0:
             logger.debug(

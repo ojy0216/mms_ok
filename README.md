@@ -239,6 +239,7 @@ with XEM7310("path/to/design.bit") as fpga:
 ### Pipe transfers
 
 Use pipe endpoints for host-to-FPGA and FPGA-to-host data movement. Strings, `bytearray` objects, and NumPy arrays are accepted for writes.
+Hexadecimal strings are interpreted as FPGA words using `endian="little"` by default. Pass `endian="big"` to preserve the original hex byte order.
 
 ```python
 import numpy as np

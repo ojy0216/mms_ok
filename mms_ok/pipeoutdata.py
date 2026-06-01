@@ -1,6 +1,12 @@
+from typing import Any, Optional
+
 import numpy as np
 
-from .diagnostics import log_error
+from .diagnostics import log_error, log_warning
+
+
+REORDER_STR_WARNING = "`reorder_str` is deprecated; use `endian` instead."
+_ENDIAN_OMITTED = object()
 
 
 def reorder_hex_words(hex_str: str, word_byte_width: int = 4) -> str:
@@ -18,6 +24,33 @@ def reorder_hex_words(hex_str: str, word_byte_width: int = 4) -> str:
             for j in range(word_hex_width - 2, -1, -2)
         )
         for i in range(0, len(hex_str), word_hex_width)
+    )
+
+
+def validate_endian(endian: str) -> str:
+    if endian not in ("little", "big"):
+        message = "endian must be 'little' or 'big'"
+        log_error(message)
+        raise ValueError(message)
+    return endian
+
+
+def bytes_to_hex_words(
+    data: bytearray, word_byte_width: int = 4, endian: str = "little"
+) -> str:
+    validate_endian(endian)
+    if len(data) % word_byte_width != 0:
+        message = f"Data length must be a multiple of {word_byte_width} bytes!"
+        log_error(message)
+        raise ValueError(message)
+
+    word_hex_width = word_byte_width * 2
+    return "".join(
+        "{:0{}X}".format(
+            int.from_bytes(data[i : i + word_byte_width], byteorder=endian),
+            word_hex_width,
+        )
+        for i in range(0, len(data), word_byte_width)
     )
 
 
@@ -42,8 +75,9 @@ class PipeOutData:
         self,
         error_code: int,
         raw_data: bytearray,
-        reorder_str: bool = False,
+        reorder_str: Optional[bool] = None,
         word_byte_width: int = 4,
+        endian: Any = _ENDIAN_OMITTED,
     ) -> None:
         """
         Initialize a PipeOutData object.
@@ -51,15 +85,21 @@ class PipeOutData:
         Args:
             error_code (int): The successful FrontPanel return code associated with the data.
             raw_data (bytearray): The raw binary data received.
-            reorder_str (bool): Whether to reorder the hex string representation.
+            reorder_str (bool): Deprecated; use endian instead.
+            word_byte_width (int): Number of bytes in each word used for hex formatting.
+            endian (str): Byte order used for formatted hex word data.
         """
+        if endian is _ENDIAN_OMITTED:
+            endian = "little"
+            if reorder_str is not None:
+                log_warning(REORDER_STR_WARNING)
+                endian = "little" if reorder_str else "big"
+        elif reorder_str is not None:
+            log_warning(REORDER_STR_WARNING)
+        validate_endian(endian)
         self.__error_code = error_code
         self.__raw_data = raw_data
-
-        hex_str = raw_data.hex().upper()
-        self.__hex_data = (
-            reorder_hex_words(hex_str, word_byte_width) if reorder_str else hex_str
-        )
+        self.__hex_data = bytes_to_hex_words(raw_data, word_byte_width, endian)
 
     @property
     def error_code(self) -> int:

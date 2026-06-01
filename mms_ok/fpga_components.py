@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 import numpy as np
 
@@ -22,15 +22,38 @@ from .address import (
     WIRE_OUT_END,
     WIRE_OUT_START,
 )
-from .diagnostics import log_error
+from .diagnostics import log_error, log_warning
 from .ok_setup import get_ok
-from .pipeoutdata import PipeOutData, reorder_hex_words
+from .pipeoutdata import (
+    REORDER_STR_WARNING,
+    PipeOutData,
+    reorder_hex_words,
+    validate_endian,
+)
 from .validation import (
     get_block_pipe_constraints,
     validate_address,
     validate_block_size,
     validate_wire_value,
 )
+
+
+_ENDIAN_OMITTED = object()
+
+
+def _resolve_pipe_endian(endian: Any, reorder_str: Optional[bool]) -> str:
+    if endian is _ENDIAN_OMITTED:
+        if reorder_str is None:
+            return "little"
+        log_warning(REORDER_STR_WARNING)
+        return "little" if reorder_str else "big"
+    if isinstance(endian, bool):
+        log_warning(REORDER_STR_WARNING)
+        return "little" if endian else "big"
+    if reorder_str is not None:
+        log_warning(REORDER_STR_WARNING)
+    validate_endian(endian)
+    return endian
 
 
 def _format_hex_for_bit_width(value: int, bit_width: int) -> str:
@@ -295,15 +318,49 @@ class PipeOperations:
         """
         return reorder_hex_words(hex_str)
 
+    @staticmethod
+    def _hex_words_to_bytearray(
+        hex_str: str, word_byte_width: int, endian: str
+    ) -> bytearray:
+        word_hex_width = word_byte_width * 2
+        normalized_hex = bytearray.fromhex(hex_str).hex()
+        if len(normalized_hex) % word_hex_width != 0:
+            message = (
+                f"Hexadecimal string length must be a multiple of {word_hex_width}!"
+            )
+            log_error(message)
+            raise ValueError(message)
+
+        return bytearray(
+            b"".join(
+                int(normalized_hex[i : i + word_hex_width], 16).to_bytes(
+                    word_byte_width, byteorder=endian
+                )
+                for i in range(0, len(normalized_hex), word_hex_width)
+            )
+        )
+
+    @staticmethod
+    def _ndarray_to_bytearray(data: np.ndarray, endian: str) -> bytearray:
+        contiguous = np.ascontiguousarray(data)
+        if np.issubdtype(contiguous.dtype, np.integer):
+            target_dtype = contiguous.dtype.newbyteorder(
+                "<" if endian == "little" else ">"
+            )
+            return bytearray(contiguous.astype(target_dtype, copy=False).tobytes())
+        return bytearray(contiguous.tobytes())
+
     def _prepare_data(
-        self, data: Union[str, bytearray, np.ndarray], reorder_str: bool
+        self,
+        data: Union[str, bytearray, np.ndarray],
+        endian: str = "little",
     ) -> bytearray:
         """
         Prepare data for pipe operations.
 
         Args:
             data: Data to prepare (string, bytearray, or numpy array)
-            reorder_str: Whether to reorder string data
+            endian: Byte order used for string and integer numpy array data
 
         Returns:
             bytearray: Prepared data
@@ -312,13 +369,11 @@ class PipeOperations:
             ValueError: If data format is invalid
             TypeError: If data type is not supported
         """
+        validate_endian(endian)
         if isinstance(data, str):
-            if reorder_str:
-                data = bytearray.fromhex(self.reorder_hex_str(data))
-            else:
-                data = bytearray.fromhex(data)
+            data = self._hex_words_to_bytearray(data, 4, endian)
         elif isinstance(data, np.ndarray):
-            data = bytearray(data)
+            data = self._ndarray_to_bytearray(data, endian)
         elif not isinstance(data, bytearray):
             raise TypeError("Data must be a string, bytearray, or numpy array")
 
@@ -359,7 +414,8 @@ class PipeOperations:
         self,
         ep_addr: int,
         data: Union[str, bytearray, np.ndarray],
-        reorder_str: bool = True,
+        endian: Union[str, bool] = _ENDIAN_OMITTED,
+        reorder_str: Optional[bool] = None,
     ) -> int:
         """
         Write data to a pipe-in endpoint.
@@ -367,7 +423,8 @@ class PipeOperations:
         Args:
             ep_addr (int): Pipe endpoint address (0x80 - 0x9F)
             data: Data to write
-            reorder_str (bool): Whether to reorder string data
+            endian (str): Byte order used for string and integer numpy array data
+            reorder_str (bool): Deprecated; use endian instead
 
         Returns:
             int: Error code (0 on success)
@@ -375,9 +432,10 @@ class PipeOperations:
         Raises:
             ValueError: If endpoint address or data format is invalid
         """
+        endian = _resolve_pipe_endian(endian, reorder_str)
         validate_address(PIPE_IN_START, PIPE_IN_END, ep_addr)
 
-        prepared_data = self._prepare_data(data, reorder_str)
+        prepared_data = self._prepare_data(data, endian)
 
         error_code = self.xem.WriteToPipeIn(ep_addr, prepared_data)
         return _check_error_code(
@@ -385,7 +443,11 @@ class PipeOperations:
         )
 
     def read_from_pipe_out(
-        self, ep_addr: int, data: Union[int, bytearray], reorder_str: bool = True
+        self,
+        ep_addr: int,
+        data: Union[int, bytearray],
+        endian: Union[str, bool] = _ENDIAN_OMITTED,
+        reorder_str: Optional[bool] = None,
     ) -> PipeOutData:
         """
         Read data from a pipe-out endpoint.
@@ -393,7 +455,8 @@ class PipeOperations:
         Args:
             ep_addr (int): Pipe endpoint address (0xA0 - 0xBF)
             data: Either a bytearray to use as buffer or an integer specifying buffer size
-            reorder_str (bool): Whether to reorder received string data
+            endian (str): Byte order used for formatted hex word data
+            reorder_str (bool): Deprecated; use endian instead
 
         Returns:
             PipeOutData: Object containing read data and successful return code
@@ -402,6 +465,7 @@ class PipeOperations:
             ValueError: If endpoint address or buffer format is invalid
             RuntimeError: If the FrontPanel read operation returns an error code
         """
+        endian = _resolve_pipe_endian(endian, reorder_str)
         validate_address(PIPE_OUT_START, PIPE_OUT_END, ep_addr)
 
         buffer = self._prepare_read_buffer(data)
@@ -410,7 +474,9 @@ class PipeOperations:
         _check_error_code(error_code, "ReadFromPipeOut", "Failed to read from pipe-out")
 
         return PipeOutData(
-            error_code=error_code, raw_data=buffer, reorder_str=reorder_str
+            error_code=error_code,
+            raw_data=buffer,
+            endian=endian,
         )
 
 
@@ -449,17 +515,17 @@ class BlockPipeOperations:
         return 2 if interface.startswith("USB2") else 4
 
     def _prepare_data(
-        self, data: Union[str, bytearray, np.ndarray], reorder_str: bool
+        self,
+        data: Union[str, bytearray, np.ndarray],
+        endian: str = "little",
     ) -> bytearray:
+        validate_endian(endian)
         if isinstance(data, str):
-            if reorder_str:
-                data = bytearray.fromhex(
-                    reorder_hex_words(data, self._word_byte_width())
-                )
-            else:
-                data = bytearray.fromhex(data)
+            data = PipeOperations._hex_words_to_bytearray(
+                data, self._word_byte_width(), endian
+            )
         elif isinstance(data, np.ndarray):
-            data = bytearray(data)
+            data = PipeOperations._ndarray_to_bytearray(data, endian)
         elif not isinstance(data, bytearray):
             raise TypeError("Data must be a string, bytearray, or numpy array")
         return data
@@ -529,7 +595,8 @@ class BlockPipeOperations:
         ep_addr: int,
         data: Union[str, bytearray, np.ndarray],
         block_size: int = None,
-        reorder_str: bool = True,
+        endian: Union[str, bool] = _ENDIAN_OMITTED,
+        reorder_str: Optional[bool] = None,
     ) -> int:
         """
         Write data to a block pipe-in endpoint.
@@ -538,7 +605,8 @@ class BlockPipeOperations:
             ep_addr (int): Block pipe endpoint address (0x80 - 0x9F)
             data: Data to write
             block_size (int): Number of bytes to write to the pipe
-            reorder_str (bool): Whether to reorder string data
+            endian (str): Byte order used for string and integer numpy array data
+            reorder_str (bool): Deprecated; use endian instead
 
         Returns:
             int: Error code (0 on success)
@@ -546,9 +614,10 @@ class BlockPipeOperations:
         Raises:
             ValueError: If endpoint address or data format is invalid
         """
+        endian = _resolve_pipe_endian(endian, reorder_str)
         validate_address(BLOCK_PIPE_IN_START, BLOCK_PIPE_IN_END, ep_addr)
 
-        prepared_data = self._prepare_data(data, reorder_str)
+        prepared_data = self._prepare_data(data, endian)
 
         if block_size is None:
             block_size = self._select_block_size(len(prepared_data))
@@ -571,7 +640,8 @@ class BlockPipeOperations:
         ep_addr: int,
         data: Union[int, bytearray],
         block_size: int = None,
-        reorder_str: bool = True,
+        endian: Union[str, bool] = _ENDIAN_OMITTED,
+        reorder_str: Optional[bool] = None,
     ) -> PipeOutData:
         """
         Read data from a block pipe-out endpoint.
@@ -580,7 +650,8 @@ class BlockPipeOperations:
             ep_addr (int): Block pipe endpoint address (0xA0 - 0xBF)
             data: Either a bytearray to use as buffer or an integer specifying buffer size
             block_size (int): Number of bytes to read from the pipe
-            reorder_str (bool): Whether to reorder received string data
+            endian (str): Byte order used for formatted hex word data
+            reorder_str (bool): Deprecated; use endian instead
 
         Returns:
             PipeOutData: Object containing read data and successful return code
@@ -589,6 +660,7 @@ class BlockPipeOperations:
             ValueError: If endpoint address or buffer format is invalid
             RuntimeError: If the FrontPanel read operation returns an error code
         """
+        endian = _resolve_pipe_endian(endian, reorder_str)
         validate_address(BLOCK_PIPE_OUT_START, BLOCK_PIPE_OUT_END, ep_addr)
 
         buffer = self._prepare_read_buffer(data)
@@ -612,6 +684,6 @@ class BlockPipeOperations:
         return PipeOutData(
             error_code=error_code,
             raw_data=buffer,
-            reorder_str=reorder_str,
             word_byte_width=self._word_byte_width(),
+            endian=endian,
         )
