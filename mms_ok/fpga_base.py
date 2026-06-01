@@ -95,6 +95,7 @@ class XEM(ABC):
             self.auto_trigger_out = True
 
             self.verbose_level = 0
+            self.trigger_poll_interval = 0.001
 
             # Initialize components
             self.wire_ops = WireOperations(self.xem, self.config.wire_width)
@@ -756,7 +757,13 @@ class XEM(ABC):
             )
         return triggered
 
-    def CheckTriggered(self, ep_addr: int, mask: int, timeout: float = 1.0):
+    def CheckTriggered(
+        self,
+        ep_addr: int,
+        mask: int,
+        timeout: float = 1.0,
+        poll_interval: Optional[float] = None,
+    ):
         """
         Check if a trigger condition is met within a specified timeout.
 
@@ -764,10 +771,21 @@ class XEM(ABC):
             ep_addr (int): Trigger endpoint address
             mask (int): Bit mask specifying which trigger bits to check
             timeout (float): Maximum time to wait for trigger condition, in seconds (default: 1)
+            poll_interval (Optional[float]): Time to sleep between failed trigger
+                checks, in seconds. Defaults to ``self.trigger_poll_interval`` (1 ms
+                on initialized devices). Pass 0 to busy-poll without sleeping.
 
         Raises:
+            ValueError: If poll_interval is negative
             TimeoutError: If trigger condition is not met within the specified timeout
         """
+        default_poll_interval = getattr(self, "trigger_poll_interval", 0.001)
+        resolved_poll_interval = (
+            default_poll_interval if poll_interval is None else poll_interval
+        )
+        if resolved_poll_interval < 0:
+            raise ValueError("poll_interval must be non-negative")
+
         start_time = time.perf_counter()
         while True:
             if self.IsTriggered(ep_addr, mask, auto_update=True):
@@ -776,13 +794,16 @@ class XEM(ABC):
                         f"CheckTriggered >> Addr {hex(ep_addr)} | Mask {hex(mask)} | Trigger condition met."
                     )
                 return
-            if time.perf_counter() - start_time > timeout:
+            elapsed = time.perf_counter() - start_time
+            if elapsed >= timeout:
                 log_error(
                     f"Trigger ({hex(ep_addr)}) condition not met within {timeout}s",
                 )
                 raise TimeoutError(
                     f"Trigger ({hex(ep_addr)}) condition not met within timeout"
                 )
+            if resolved_poll_interval > 0:
+                time.sleep(min(resolved_poll_interval, timeout - elapsed))
 
     def WriteRegister(self, addr: int, data: int) -> int:
         """
