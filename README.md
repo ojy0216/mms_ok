@@ -247,7 +247,7 @@ from mms_ok import XEM7310
 
 with XEM7310("path/to/design.bit") as fpga:
     # Write a hexadecimal payload to a pipe-in endpoint.
-    written = fpga.WriteToPipeIn(0x80, "AABBCCDDEEFF0011")
+    written = fpga.WriteToPipeIn(0x80, "AABBCCDDEEFF00112233445566778899")
     print(f"wrote {written} bytes")
 
     # Write a NumPy array.
@@ -264,6 +264,80 @@ with XEM7310("path/to/design.bit") as fpga:
     print(words)
 ```
 
+#### Pipe transaction details
+
+A pipe transaction is one explicit buffer transfer between the host program and a
+FrontPanel pipe endpoint:
+
+- `WriteToPipeIn(0x80, data, ...)` sends one prepared byte buffer from the host
+  to a pipe-in endpoint in the `0x80`-`0x9F` range.
+- `ReadFromPipeOut(0xA0, size_or_buffer, ...)` fills a host buffer from a
+  pipe-out endpoint in the `0xA0`-`0xBF` range.
+- Normal pipe transfers must be a multiple of 16 bytes. For reads, pass either
+  an integer byte count, such as `16`, or an existing `bytearray` buffer.
+- Successful reads return `PipeOutData`. Use `raw_data` for the exact bytes from
+  the FPGA, `hex_data` for word-formatted hexadecimal text, and
+  `to_ndarray(dtype)` for a NumPy view over the raw bytes.
+- Negative FrontPanel return codes are raised as `RuntimeError`.
+
+For write calls, each supported input type is prepared differently:
+
+| Input type | Pipe behavior |
+| --- | --- |
+| Hex string | Parsed as FPGA words and converted to bytes using `endian`. Whitespace accepted by `bytearray.fromhex` is allowed. |
+| `bytearray` | Sent exactly as provided. `endian` and `reverse` do not rewrite raw byte buffers. |
+| NumPy integer array | Flattened in C order, then each element is encoded using `endian`, independent of the array dtype byte order. |
+| NumPy non-integer array | Flattened in C order and sent as contiguous raw bytes. |
+
+#### `endian` and `reverse`
+
+`endian` controls byte order inside each formatted word. For normal pipes, hex
+strings and `PipeOutData.hex_data` use 32-bit words:
+
+```python
+# Four 32-bit words: AABBCCDD 11223344 55667788 9900A1B2
+payload = "AABBCCDD11223344556677889900A1B2"
+
+# Default: endian="little"; each 32-bit word is byte-swapped on the wire.
+fpga.WriteToPipeIn(0x80, payload)
+# bytes sent: DD CC BB AA  44 33 22 11  88 77 66 55  B2 A1 00 99
+
+# Big endian preserves the hex byte order inside each word.
+fpga.WriteToPipeIn(0x80, payload, endian="big")
+# bytes sent: AA BB CC DD  11 22 33 44  55 66 77 88  99 00 A1 B2
+```
+
+The same option affects the display format for reads. If the FPGA returns raw
+bytes `DD CC BB AA`, `ReadFromPipeOut(..., endian="little").hex_data` is
+`"AABBCCDD"`, while `endian="big"` reports `"DDCCBBAA"`. `raw_data` is never
+changed by formatting options.
+
+`reverse=True` reverses transfer/display order at the word or element level:
+
+- Hex-string writes reverse the order of 32-bit words before applying `endian`.
+- NumPy writes reverse flattened array elements before byte conversion.
+- Pipe reads reverse the order of 32-bit words in `hex_data` only; `raw_data`
+  remains in the exact order received from FrontPanel.
+- `bytearray` writes are treated as already-final raw bytes, so `reverse=True`
+  leaves them unchanged.
+
+Example with the payload above:
+
+```python
+fpga.WriteToPipeIn(0x80, payload, reverse=True)
+# logical word order becomes: 9900A1B2 55667788 11223344 AABBCCDD
+# default little-endian bytes sent:
+# B2 A1 00 99  88 77 66 55  44 33 22 11  DD CC BB AA
+
+packet = fpga.ReadFromPipeOut(0xA0, 16, reverse=True)
+print(packet.raw_data)  # unchanged raw bytes
+print(packet.hex_data)  # 32-bit words displayed latest-word first
+```
+
+`reorder_str` is still accepted for older code, but it is deprecated. Prefer
+`endian="little"` for the old reordered-word behavior or `endian="big"` when
+the original hex byte order should be preserved.
+
 ### Block pipe transfers
 
 Use block pipes for larger transfers when your FPGA design exposes block pipe endpoints:
@@ -279,6 +353,14 @@ with XEM7310("path/to/design.bit") as fpga:
     received = fpga.ReadFromBlockPipeOut(0xA0, 4096)
     data = received.to_ndarray(dtype=np.uint32)
 ```
+
+Block pipe write and read helpers accept the same `endian` and `reverse`
+options. The difference is transfer sizing: block pipes use a `block_size`
+selected from the connected transport when omitted, and the total transfer byte
+count must be compatible with that block size. For hex strings, USB 2 block
+pipes format 16-bit words; USB 3, PCIe, and the default policy format 32-bit
+words. `reverse=True` still reverses 32-bit groups for hex-string writes and
+`hex_data` display.
 
 ### Register bridge operations
 
