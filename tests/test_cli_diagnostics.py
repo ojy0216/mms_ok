@@ -4,6 +4,7 @@ import os
 
 import pytest
 
+import mms_ok
 from mms_ok import cli
 from mms_ok import doctor
 
@@ -151,6 +152,26 @@ def test_existing_version_subcommand_still_dispatches(capsys):
     captured = capsys.readouterr()
     assert status == 0
     assert captured.out == f"v{cli.__version__}\n"
+
+
+def test_bist_subcommand_exits_success_when_bist_passes(monkeypatch):
+    class PassingBIST:
+        def run_test(self):
+            return True
+
+    monkeypatch.setattr(mms_ok, "BIST", PassingBIST)
+
+    assert cli.main(["bist"]) == 0
+
+
+def test_bist_subcommand_exits_failure_when_bist_fails(monkeypatch):
+    class FailingBIST:
+        def run_test(self):
+            return False
+
+    monkeypatch.setattr(mms_ok, "BIST", FailingBIST)
+
+    assert cli.main(["bist"]) == cli.EXIT_BIST_FAILED
 
 
 def test_doctor_success_reports_api_and_device_count(monkeypatch, tmp_path, capsys):

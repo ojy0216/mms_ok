@@ -6,6 +6,63 @@ from mms_ok import bist
 from mms_ok import bitstreams
 
 
+def _bist_with_counts(
+    *,
+    wire_correct=bist.NUM_TEST_CHANNELS,
+    pipe_correct=bist.NUM_TEST_CHANNELS,
+    btpipe_correct=bist.NUM_TEST_CHANNELS,
+    trigger_correct=bist.NUM_TEST_CHANNELS,
+):
+    test = bist.BIST.__new__(bist.BIST)
+    test.wire_correct = wire_correct
+    test.pipe_correct = pipe_correct
+    test.btpipe_correct = btpipe_correct
+    test.trigger_correct = trigger_correct
+    return test
+
+
+def test_bist_run_test_returns_true_when_all_checks_pass(monkeypatch):
+    calls = []
+    test = _bist_with_counts()
+
+    monkeypatch.setattr(test, "functional_test", lambda: calls.append("functional"))
+    monkeypatch.setattr(
+        test,
+        "print_functional_test_results",
+        lambda: calls.append("print"),
+    )
+
+    assert test.run_test() is True
+    assert calls == ["functional", "print"]
+
+
+@pytest.mark.parametrize(
+    "short_counter",
+    [
+        "wire_correct",
+        "pipe_correct",
+        "btpipe_correct",
+        "trigger_correct",
+    ],
+)
+def test_bist_run_test_returns_false_when_any_check_fails(
+    monkeypatch, short_counter
+):
+    calls = []
+    test = _bist_with_counts()
+    setattr(test, short_counter, bist.NUM_TEST_CHANNELS - 1)
+
+    monkeypatch.setattr(test, "functional_test", lambda: calls.append("functional"))
+    monkeypatch.setattr(
+        test,
+        "print_functional_test_results",
+        lambda: calls.append("print"),
+    )
+
+    assert test.run_test() is False
+    assert calls == ["functional", "print"]
+
+
 def test_user_resolver_accepts_absolute_bitstream_path(tmp_path):
     bitstream = tmp_path / "design.bit"
     bitstream.write_bytes(b"absolute")
