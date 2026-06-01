@@ -35,17 +35,15 @@ class XEM7360(XEM):
             Plus all exceptions from parent class __init__
         """
         super().__init__(bitstream_path=bitstream_path)
-        try:
-            ok = get_ok()
 
-            target_product_id = ok.okCFrontPanel.brdXEM7360K160T
+    def _validate_connected_board(self) -> None:
+        ok = get_ok()
 
-            if self.config.product_id != target_product_id:
-                log_critical("Connected FPGA board is not a XEM7360K160T!")
-                raise TypeError("Connected FPGA board is not a XEM7360K160T!")
-        except Exception:
-            self.close()
-            raise
+        target_product_id = ok.okCFrontPanel.brdXEM7360K160T
+
+        if self.config.product_id != target_product_id:
+            log_critical("Connected FPGA board is not a XEM7360K160T!")
+            raise TypeError("Connected FPGA board is not a XEM7360K160T!")
 
     def _check_device_settings(self) -> None:
         """

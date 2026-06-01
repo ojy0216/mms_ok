@@ -88,6 +88,7 @@ class XEM(ABC):
             self._validate_bitstream_path()
 
             self._connect()
+            self._validate_connected_board()
             self._configure()
 
             self.auto_wire_in = True
@@ -198,6 +199,15 @@ class XEM(ABC):
 
         self.config = FPGAConfig.from_device_info(device_info)
         self.config.validate()
+
+    def _validate_connected_board(self) -> None:
+        """
+        Validate that the connected board matches the concrete device class.
+
+        Base devices accept any connected board. Board-specific subclasses can
+        override this hook to fail before configuring an incompatible FPGA.
+        """
+        pass
 
     def _configure(self) -> None:
         """

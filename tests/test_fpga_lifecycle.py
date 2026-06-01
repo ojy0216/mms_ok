@@ -40,6 +40,7 @@ class FakeFrontPanel:
     def __init__(self) -> None:
         self.open = False
         self.close_calls = 0
+        self.configure_calls = []
         self.is_open_calls = 0
         FakeFrontPanel.instances.append(self)
 
@@ -57,6 +58,7 @@ class FakeFrontPanel:
         return None
 
     def ConfigureFPGA(self, bitstream_path: str) -> int:
+        self.configure_calls.append(bitstream_path)
         return FakeFrontPanel.configure_error
 
     def IsFrontPanelEnabled(self) -> bool:
@@ -205,6 +207,7 @@ def test_xem7310_constructor_uses_board_module_get_ok(monkeypatch, bitstream_pat
         assert isinstance(device, fpga.XEM)
         assert device.config.product_id == FakeFrontPanel.brdXEM7310A75
         assert device.is_open() is True
+        assert FakeFrontPanel.instances[0].configure_calls == [bitstream_path]
     finally:
         device.close()
 
@@ -225,8 +228,35 @@ def test_xem7360_constructor_uses_board_module_get_ok(monkeypatch, bitstream_pat
             "vadj3": 1.2,
         }
         assert device.is_open() is True
+        assert FakeFrontPanel.instances[0].configure_calls == [bitstream_path]
     finally:
         device.close()
+
+
+def test_xem7310_wrong_board_fails_before_configure(monkeypatch, bitstream_path):
+    FakeFrontPanel.product_name = "XEM7360"
+    FakeFrontPanel.product_id = FakeFrontPanel.brdXEM7360K160T
+    monkeypatch.setattr(fpga_xem7310, "get_ok", lambda: FakeOk)
+
+    with pytest.raises(TypeError, match="XEM7310A75/A200"):
+        fpga.XEM7310(bitstream_path)
+
+    handle = FakeFrontPanel.instances[0]
+    assert handle.close_calls == 1
+    assert handle.configure_calls == []
+
+
+def test_xem7360_wrong_board_fails_before_configure(monkeypatch, bitstream_path):
+    FakeFrontPanel.product_name = "XEM7310"
+    FakeFrontPanel.product_id = FakeFrontPanel.brdXEM7310A75
+    monkeypatch.setattr(fpga_xem7360, "get_ok", lambda: FakeOk)
+
+    with pytest.raises(TypeError, match="XEM7360K160T"):
+        fpga.XEM7360(bitstream_path)
+
+    handle = FakeFrontPanel.instances[0]
+    assert handle.close_calls == 1
+    assert handle.configure_calls == []
 
 
 def test_configure_failure_after_open_closes_handle(bitstream_path):

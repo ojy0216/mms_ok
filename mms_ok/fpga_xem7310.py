@@ -35,20 +35,18 @@ class XEM7310(XEM):
             Plus all exceptions from parent class __init__
         """
         super().__init__(bitstream_path=bitstream_path)
-        try:
-            ok = get_ok()
 
-            target_product_id_list = [
-                ok.okCFrontPanel.brdXEM7310A75,
-                ok.okCFrontPanel.brdXEM7310A200,
-            ]
+    def _validate_connected_board(self) -> None:
+        ok = get_ok()
 
-            if self.config.product_id not in target_product_id_list:
-                log_critical("Connected FPGA board is not a XEM7310A75/A200!")
-                raise TypeError("Connected FPGA board is not a XEM7310A75/A200!")
-        except Exception:
-            self.close()
-            raise
+        target_product_id_list = [
+            ok.okCFrontPanel.brdXEM7310A75,
+            ok.okCFrontPanel.brdXEM7310A200,
+        ]
+
+        if self.config.product_id not in target_product_id_list:
+            log_critical("Connected FPGA board is not a XEM7310A75/A200!")
+            raise TypeError("Connected FPGA board is not a XEM7310A75/A200!")
 
     def _check_device_settings(self) -> None:
         """No additional settings to check for XEM7310."""
