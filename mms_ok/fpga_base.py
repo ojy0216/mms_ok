@@ -404,6 +404,16 @@ class XEM(ABC):
             return
 
         logger.info("Closing device")
+        self._shutdown_leds_before_close()
+        try:
+            self.xem.Close()
+        finally:
+            self._opened = False
+            self._detach_close_finalizer()
+        logger.info("Device closed!")
+
+    def _shutdown_leds_before_close(self) -> None:
+        """Turn off LEDs during teardown as best effort; this must not raise."""
         try:
             if self._led_used:
                 led_address = self._led_address
@@ -419,12 +429,6 @@ class XEM(ABC):
             logger.opt(exception=exc).warning(
                 "Failed to turn off LEDs before closing the device."
             )
-        try:
-            self.xem.Close()
-        finally:
-            self._opened = False
-            self._detach_close_finalizer()
-        logger.info("Device closed!")
 
     def __exit__(
         self,
