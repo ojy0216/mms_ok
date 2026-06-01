@@ -412,6 +412,50 @@ def test_read_register_logs_and_raises_on_negative_error_code(monkeypatch):
     assert "ReadRegister failed - mock error -1" in messages[0]
 
 
+def test_read_register_logs_and_raises_on_runtime_error(monkeypatch):
+    handle = FakeFrontPanel()
+
+    def read_register(addr: int) -> int:
+        raise RuntimeError("Error -8")
+
+    handle.ReadRegister = read_register
+    device = make_uninitialized_device(handle)
+    messages = []
+    monkeypatch.setattr(fpga_base, "log_error", lambda message: messages.append(message))
+
+    with pytest.raises(RuntimeError, match="Failed to read register value") as exc_info:
+        device.ReadRegister(0x1000)
+
+    assert isinstance(exc_info.value.__cause__, RuntimeError)
+    assert "mock error -8" in str(exc_info.value)
+    assert "Error -8" not in str(exc_info.value)
+    assert len(messages) == 1
+    assert "ReadRegister failed - mock error -8" in messages[0]
+    assert "Error -8" not in messages[0]
+
+
+def test_read_register_runtime_error_falls_back_to_last_error(monkeypatch):
+    handle = FakeFrontPanel()
+
+    def read_register(addr: int) -> int:
+        raise RuntimeError("binding failed")
+
+    handle.ReadRegister = read_register
+    handle.GetLastError = lambda: -9
+    device = make_uninitialized_device(handle)
+    messages = []
+    monkeypatch.setattr(fpga_base, "log_error", lambda message: messages.append(message))
+
+    with pytest.raises(RuntimeError, match="Failed to read register value") as exc_info:
+        device.ReadRegister(0x1000)
+
+    assert "mock error -9" in str(exc_info.value)
+    assert "binding failed" not in str(exc_info.value)
+    assert len(messages) == 1
+    assert "ReadRegister failed - mock error -9" in messages[0]
+    assert "binding failed" not in messages[0]
+
+
 def test_diagnostics_returns_required_keys(bitstream_path):
     device = LifecycleXEM(bitstream_path)
 

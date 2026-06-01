@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import time
 import types
 import weakref
@@ -30,6 +31,9 @@ from .fpga_config import FPGAConfig
 from .ok_setup import get_frontpanel_version, get_ok
 from .pipeoutdata import PipeOutData
 from .validation import validate_address, validate_wire_value
+
+
+_FRONTPANEL_ERROR_CODE_RE = re.compile(r"\bError\s+(-?\d+)\b")
 
 
 class XEM(ABC):
@@ -132,6 +136,32 @@ class XEM(ABC):
             log_error(f"{operation} failed - {error_str}")
             raise RuntimeError(f"{failure_message} ({error_str})")
         return error_code
+
+    def _resolve_frontpanel_runtime_error(self, exc: RuntimeError) -> str:
+        match = _FRONTPANEL_ERROR_CODE_RE.search(str(exc))
+        if match is not None:
+            error_code = int(match.group(1))
+            return get_ok().okCFrontPanel.GetErrorString(error_code)
+
+        get_last_error = getattr(self.xem, "GetLastError", None)
+        if callable(get_last_error):
+            try:
+                error_code = get_last_error()
+            except Exception:
+                error_code = None
+            if isinstance(error_code, int) and error_code < 0:
+                return get_ok().okCFrontPanel.GetErrorString(error_code)
+
+        get_last_error_message = getattr(self.xem, "GetLastErrorMessage", None)
+        if callable(get_last_error_message):
+            try:
+                message = get_last_error_message()
+            except Exception:
+                message = None
+            if message:
+                return str(message)
+
+        return "Unknown FrontPanel runtime error"
 
     @staticmethod
     def _finalize_xem_handle(xem) -> None:
@@ -860,7 +890,12 @@ class XEM(ABC):
         """
         validate_address(0, 2**32 - 1, addr)
 
-        value = self.xem.ReadRegister(addr)
+        try:
+            value = self.xem.ReadRegister(addr)
+        except RuntimeError as exc:
+            error_str = self._resolve_frontpanel_runtime_error(exc)
+            log_error(f"ReadRegister failed - {error_str}")
+            raise RuntimeError(f"Failed to read register value ({error_str})") from exc
         self._check_error_code(value, "ReadRegister", "Failed to read register value")
         if self.verbose_level > 0:
             logger.debug(f"ReadRegister >> Addr {hex(addr)} | Value: {value}")
