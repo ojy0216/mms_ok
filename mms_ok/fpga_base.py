@@ -406,10 +406,19 @@ class XEM(ABC):
         logger.info("Closing device")
         try:
             if self._led_used:
-                logger.info("Turning off the LEDs before closing the device!")
-                self.SetLED(led_value=0, led_address=self._led_address)
+                led_address = self._led_address
+                if led_address is None:
+                    logger.warning(
+                        "Skipping LED shutdown before closing the device: "
+                        "LED usage was recorded without an LED address."
+                    )
+                else:
+                    logger.info("Turning off the LEDs before closing the device!")
+                    self.SetLED(led_value=0, led_address=led_address)
         except Exception as exc:
-            logger.warning(f"Failed to turn off LEDs before closing the device: {exc}")
+            logger.opt(exception=exc).warning(
+                "Failed to turn off LEDs before closing the device."
+            )
         try:
             self.xem.Close()
         finally:

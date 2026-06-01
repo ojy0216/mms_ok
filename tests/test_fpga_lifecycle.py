@@ -186,6 +186,27 @@ def test_close_closes_handle_when_led_shutdown_fails():
     assert device._opened is False
 
 
+def test_close_skips_led_shutdown_when_led_address_is_missing():
+    handle = FakeFrontPanel()
+    handle.open = True
+    device = make_uninitialized_device(handle)
+    device._led_used = True
+    device._led_address = None
+    set_led_calls = []
+
+    def record_set_led(led_value: int, led_address: int = 0x00) -> None:
+        set_led_calls.append((led_value, led_address))
+
+    device.SetLED = record_set_led
+
+    device.close()
+
+    assert set_led_calls == []
+    assert handle.close_calls == 1
+    assert handle.open is False
+    assert device._opened is False
+
+
 def test_close_twice_is_noop_on_second_call():
     handle = FakeFrontPanel()
     handle.open = True
