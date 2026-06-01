@@ -31,9 +31,8 @@ from .pipeoutdata import (
     validate_endian,
 )
 from .validation import (
-    get_block_pipe_constraints,
+    BlockPipeTransportPolicy,
     validate_address,
-    validate_block_size,
     validate_wire_value,
 )
 
@@ -509,10 +508,14 @@ class BlockPipeOperations:
         self.bt_max_blocksize = bt_max_blocksize
         self.usb_speed = usb_speed
         self.device_interface = device_interface
+        self._transport_policy = BlockPipeTransportPolicy(
+            bt_max_blocksize,
+            usb_speed=usb_speed,
+            device_interface=device_interface,
+        )
 
     def _word_byte_width(self) -> int:
-        interface = str(self.device_interface).upper().replace(" ", "")
-        return 2 if interface.startswith("USB2") else 4
+        return self._transport_policy.word_byte_width
 
     def _prepare_data(
         self,
@@ -538,57 +541,7 @@ class BlockPipeOperations:
         raise TypeError("Data must be an integer or bytearray")
 
     def _select_block_size(self, transfer_byte: int) -> int:
-        constraints = get_block_pipe_constraints(
-            self.bt_max_blocksize,
-            usb_speed=self.usb_speed,
-            device_interface=self.device_interface,
-        )
-
-        if not constraints.uses_block_size:
-            if transfer_byte % constraints.transfer_multiple != 0:
-                message = (
-                    f"Transfer byte must be a multiple of "
-                    f"{constraints.transfer_multiple} for "
-                    f"{constraints.description} block pipes, got {transfer_byte}"
-                )
-                log_error(message)
-                raise ValueError(message)
-            return constraints.transfer_multiple
-
-        max_block_size = constraints.max_block_size
-        if transfer_byte > 0:
-            max_block_size = min(max_block_size, transfer_byte)
-
-        if constraints.requires_power_of_two:
-            block_size = 1 << (max_block_size.bit_length() - 1)
-            while block_size >= constraints.min_block_size:
-                if transfer_byte % block_size == 0:
-                    return block_size
-                block_size //= 2
-        else:
-            block_size = max_block_size - (
-                max_block_size % constraints.block_size_multiple
-            )
-            while block_size >= constraints.min_block_size:
-                if transfer_byte % block_size == 0:
-                    return block_size
-                block_size -= constraints.block_size_multiple
-
-        if transfer_byte % constraints.transfer_multiple != 0:
-            message = (
-                f"Transfer byte must be a multiple of "
-                f"{constraints.transfer_multiple} for "
-                f"{constraints.description} block pipes, got {transfer_byte}"
-            )
-            log_error(message)
-            raise ValueError(message)
-
-        message = (
-            f"Transfer byte must be an integer multiple of a valid block size, "
-            f"got {transfer_byte}"
-        )
-        log_error(message)
-        raise ValueError(message)
+        return self._transport_policy.select_block_size(transfer_byte)
 
     def write_to_block_pipe_in(
         self,
@@ -622,13 +575,7 @@ class BlockPipeOperations:
         if block_size is None:
             block_size = self._select_block_size(len(prepared_data))
         else:
-            validate_block_size(
-                block_size,
-                self.bt_max_blocksize,
-                len(prepared_data),
-                usb_speed=self.usb_speed,
-                device_interface=self.device_interface,
-            )
+            self._transport_policy.validate_block_size(block_size, len(prepared_data))
 
         error_code = self.xem.WriteToBlockPipeIn(ep_addr, block_size, prepared_data)
         return _check_error_code(
@@ -668,13 +615,7 @@ class BlockPipeOperations:
         if block_size is None:
             block_size = self._select_block_size(len(buffer))
         else:
-            validate_block_size(
-                block_size,
-                self.bt_max_blocksize,
-                len(buffer),
-                usb_speed=self.usb_speed,
-                device_interface=self.device_interface,
-            )
+            self._transport_policy.validate_block_size(block_size, len(buffer))
 
         error_code = self.xem.ReadFromBlockPipeOut(ep_addr, block_size, buffer)
         _check_error_code(

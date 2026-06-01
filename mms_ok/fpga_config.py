@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from loguru import logger
 
 from .ok_setup import get_ok
+from .validation import BlockPipeTransportPolicy
 
 
 def _lookup_label(values, index: int) -> str:
@@ -12,16 +13,6 @@ def _lookup_label(values, index: int) -> str:
         return values[index]
     except (IndexError, TypeError):
         return values[0]
-
-
-def _max_bt_blocksize(device_interface: int, usb_speed: int) -> int:
-    if device_interface == 1:  # FX2 / USB 2.0
-        return 64 if usb_speed == 1 else 1024 if usb_speed == 2 else 64
-    if device_interface == 2:  # PCIe
-        return 1024
-    if device_interface == 3:  # FX3 / USB 3.0
-        return {1: 64, 2: 1024, 3: 16384}.get(usb_speed, 16384)
-    return -1
 
 
 @dataclass
@@ -74,9 +65,11 @@ class FPGAConfig:
             device_interface_str=_lookup_label(
                 interface_list, device_info.deviceInterface
             ),
-            max_bt_blocksize=_max_bt_blocksize(
-                device_info.deviceInterface, device_info.usbSpeed
-            ),
+            max_bt_blocksize=BlockPipeTransportPolicy(
+                -1,
+                usb_speed=device_info.usbSpeed,
+                device_interface=device_info.deviceInterface,
+            ).device_max_block_size,
             usb_speed=_lookup_label(usb_speed_list, device_info.usbSpeed),
             wire_width=device_info.wireWidth,
             trigger_width=device_info.triggerWidth,

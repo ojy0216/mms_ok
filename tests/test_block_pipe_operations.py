@@ -5,7 +5,11 @@ import pytest
 from mms_ok.fpga_config import FPGAConfig
 from mms_ok import fpga_components
 from mms_ok.fpga_components import BlockPipeOperations, PipeOperations
-from mms_ok.validation import validate_block_size
+from mms_ok.validation import (
+    BlockPipeTransportPolicy,
+    get_block_pipe_constraints,
+    validate_block_size,
+)
 
 
 class FakeOk:
@@ -51,6 +55,109 @@ class FakeDeviceInfo:
     def __init__(self, device_interface, usb_speed) -> None:
         self.deviceInterface = device_interface
         self.usbSpeed = usb_speed
+
+
+def test_usb2_transport_policy_full_speed_constraints_and_validation():
+    policy = BlockPipeTransportPolicy(
+        64, usb_speed="FULL", device_interface="USB 2"
+    )
+
+    assert policy.normalized_device_interface == "USB2"
+    assert policy.normalized_usb_speed == "FULL"
+    assert policy.effective_max_block_size == 64
+    assert policy.word_byte_width == 2
+    assert policy.constraints.min_block_size == 2
+    assert policy.constraints.block_size_multiple == 2
+    assert policy.constraints.transfer_multiple == 2
+    assert not policy.constraints.requires_power_of_two
+
+    policy.validate_block_size(24, transfer_byte=72)
+
+    with pytest.raises(ValueError, match="between 2 and 64"):
+        policy.validate_block_size(66)
+    with pytest.raises(ValueError, match="multiple of 2"):
+        policy.validate_block_size(3)
+
+
+def test_usb2_transport_policy_high_speed_uses_non_power_of_two_auto_selection():
+    policy = BlockPipeTransportPolicy(
+        64, usb_speed="HIGH", device_interface="USB 2"
+    )
+
+    assert policy.effective_max_block_size == 1024
+    assert policy.select_block_size(1500) == 750
+
+
+@pytest.mark.parametrize(
+    "usb_speed,expected_max",
+    [("FULL", 64), ("HIGH", 1024), ("SUPER", 16384)],
+)
+def test_usb3_transport_policy_caps_by_connection_speed(usb_speed, expected_max):
+    policy = BlockPipeTransportPolicy(
+        16384, usb_speed=usb_speed, device_interface="USB 3"
+    )
+
+    assert policy.effective_max_block_size == expected_max
+    assert policy.word_byte_width == 4
+    assert policy.constraints.min_block_size == 16
+    assert policy.constraints.block_size_multiple == 16
+    assert policy.constraints.transfer_multiple == 16
+    assert policy.constraints.requires_power_of_two
+
+
+def test_usb3_transport_policy_validates_power_of_two_and_auto_falls_back_to_16():
+    policy = BlockPipeTransportPolicy(
+        16384, usb_speed="SUPER", device_interface="USB 3"
+    )
+
+    policy.validate_block_size(16, transfer_byte=16 * 1025)
+    assert policy.select_block_size(16 * 1025) == 16
+
+    with pytest.raises(ValueError, match="power of 2"):
+        policy.validate_block_size(24)
+
+
+def test_pcie_transport_policy_uses_transfer_granularity_without_block_constraint():
+    policy = BlockPipeTransportPolicy(
+        1024, usb_speed="SUPER", device_interface="PCIe"
+    )
+
+    assert policy.device_max_block_size == 1024
+    assert policy.word_byte_width == 4
+    assert not policy.constraints.uses_block_size
+    assert policy.constraints.transfer_multiple == 8
+    assert policy.select_block_size(8) == 8
+
+    policy.validate_block_size(3, transfer_byte=8)
+
+    with pytest.raises(ValueError, match="multiple of 8"):
+        policy.validate_block_size(3, transfer_byte=4)
+
+
+def test_unknown_transport_policy_uses_default_usb3_style_constraints():
+    policy = BlockPipeTransportPolicy(0)
+
+    assert policy.normalized_device_interface == "UNKNOWN"
+    assert policy.effective_max_block_size == 16384
+    assert policy.word_byte_width == 4
+    assert policy.constraints.uses_block_size
+    assert policy.constraints.requires_power_of_two
+    assert policy.select_block_size(16 * 1025) == 16
+
+    policy.validate_block_size(16384, transfer_byte=16384 * 2)
+
+    with pytest.raises(ValueError, match="between 16 and 16384"):
+        policy.validate_block_size(32768)
+
+
+def test_get_block_pipe_constraints_delegates_to_transport_policy():
+    constraints = get_block_pipe_constraints(
+        64, usb_speed="HIGH", device_interface="USB 2"
+    )
+
+    assert constraints.max_block_size == 1024
+    assert constraints.block_size_multiple == 2
+    assert constraints.transfer_multiple == 2
 
 
 def test_write_to_block_pipe_in_uses_largest_block_size_that_divides_transfer():
@@ -256,12 +363,15 @@ def test_pcie_block_pipe_requires_eight_byte_transfer_granularity():
 @pytest.mark.parametrize(
     "device_interface,usb_speed,expected_max",
     [
+        (0, 0, -1),
         (1, 1, 64),
         (1, 2, 1024),
+        (1, 3, 64),
         (2, 0, 1024),
         (3, 1, 64),
         (3, 2, 1024),
         (3, 3, 16384),
+        (3, 0, 16384),
     ],
 )
 def test_fpga_config_uses_interface_and_usb_speed_for_block_pipe_max(
