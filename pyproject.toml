@@ -25,6 +25,11 @@ dependencies = [
   "tqdm",
 ]
 
+[project.optional-dependencies]
+test = [
+  "pytest",
+]
+
 [project.urls]
 Repository = "https://github.com/ojy0216/mms_ok"
 
