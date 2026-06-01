@@ -167,6 +167,25 @@ def test_close_calls_close_once_when_open():
     assert handle.open is False
 
 
+def test_close_closes_handle_when_led_shutdown_fails():
+    handle = FakeFrontPanel()
+    handle.open = True
+    device = make_uninitialized_device(handle)
+    device._led_used = True
+    device._led_address = 0x00
+
+    def fail_set_led(led_value: int, led_address: int = 0x00) -> None:
+        raise RuntimeError("led shutdown failed")
+
+    device.SetLED = fail_set_led
+
+    device.close()
+
+    assert handle.close_calls == 1
+    assert handle.open is False
+    assert device._opened is False
+
+
 def test_close_twice_is_noop_on_second_call():
     handle = FakeFrontPanel()
     handle.open = True
