@@ -33,6 +33,20 @@ CRITICAL_CHECKS = {
     "FrontPanel API",
     "Device count",
 }
+LVS_SMILE_ART = r"""
+          #    ##############      _   _
+         #     #            #      *   *
+    #   #      #    PASS    #        |
+     # #       #            #      \___/
+      #        ##############
+"""
+LVS_X_ART = r"""
+    #   #      ##############      _   _
+     # #       #            #      *   *
+      #        #    FAIL    #        |
+     # #       #            #       ___
+    #   #      ##############      /   \
+"""
 
 
 def _get_device_count(ok_module):
@@ -189,4 +203,5 @@ def run_doctor(frontpanel_dir: str, lib_dir: str) -> int:
         status == STATUS_FAIL and check in CRITICAL_CHECKS
         for status, check, _result, _details in rows
     )
+    console.print(LVS_X_ART if critical_failure else LVS_SMILE_ART)
     return 1 if critical_failure else 0

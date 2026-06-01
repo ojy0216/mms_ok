@@ -7,14 +7,17 @@ import pytest
 from rich.console import Console
 
 from mms_ok import fpga
+from mms_ok import fpga_base
 from mms_ok import fpga_config
+from mms_ok import fpga_xem7310
+from mms_ok import fpga_xem7360
 
 
 class FakeDeviceInfo:
     def __init__(self) -> None:
-        self.productName = "XEM7310"
+        self.productName = FakeFrontPanel.product_name
         self.serialNumber = "1234"
-        self.productID = FakeFrontPanel.brdXEM7310A75
+        self.productID = FakeFrontPanel.product_id
         self.deviceInterface = 3
         self.usbSpeed = 3
         self.wireWidth = 32
@@ -31,10 +34,13 @@ class FakeFrontPanel:
     open_error = 0
     configure_error = 0
     frontpanel_enabled = True
+    product_name = "XEM7310"
+    product_id = brdXEM7310A75
 
     def __init__(self) -> None:
         self.open = False
         self.close_calls = 0
+        self.configure_calls = []
         self.is_open_calls = 0
         FakeFrontPanel.instances.append(self)
 
@@ -52,6 +58,7 @@ class FakeFrontPanel:
         return None
 
     def ConfigureFPGA(self, bitstream_path: str) -> int:
+        self.configure_calls.append(bitstream_path)
         return FakeFrontPanel.configure_error
 
     def IsFrontPanelEnabled(self) -> bool:
@@ -65,11 +72,31 @@ class FakeFrontPanel:
         self.close_calls += 1
         self.open = False
 
+    @staticmethod
+    def GetDeviceSettings(handle, device_settings) -> None:
+        return None
+
+    @staticmethod
+    def GetErrorString(error_code: int) -> str:
+        return f"mock error {error_code}"
+
+
+class FakeDeviceSettings:
+    def GetInt(self, key: str) -> int:
+        values = {
+            "XEM7360_VADJ1_VOLTAGE": 120,
+            "XEM7360_VADJ2_VOLTAGE": 120,
+            "XEM7360_VADJ3_VOLTAGE": 120,
+            "XEM7360_VADJ_MODE": 0b0010_1010,
+        }
+        return values[key]
+
 
 class FakeOk:
     OK_INTERFACE_USB3 = 3
     okCFrontPanel = FakeFrontPanel
     okTDeviceInfo = FakeDeviceInfo
+    okCDeviceSettings = FakeDeviceSettings
 
 
 class LifecycleXEM(fpga.XEM):
@@ -90,11 +117,13 @@ def fake_frontpanel(monkeypatch):
     FakeFrontPanel.open_error = 0
     FakeFrontPanel.configure_error = 0
     FakeFrontPanel.frontpanel_enabled = True
+    FakeFrontPanel.product_name = "XEM7310"
+    FakeFrontPanel.product_id = FakeFrontPanel.brdXEM7310A75
     LifecycleXEM.check_error = None
 
-    monkeypatch.setattr(fpga, "get_ok", lambda: FakeOk)
+    monkeypatch.setattr(fpga_base, "get_ok", lambda: FakeOk)
     monkeypatch.setattr(fpga_config, "get_ok", lambda: FakeOk)
-    monkeypatch.setattr(fpga, "print_fpga_overview", lambda **kwargs: None)
+    monkeypatch.setattr(fpga_base, "print_fpga_overview", lambda **kwargs: None)
 
 
 @pytest.fixture
@@ -138,6 +167,46 @@ def test_close_calls_close_once_when_open():
     assert handle.open is False
 
 
+def test_close_closes_handle_when_led_shutdown_fails():
+    handle = FakeFrontPanel()
+    handle.open = True
+    device = make_uninitialized_device(handle)
+    device._led_used = True
+    device._led_address = 0x00
+
+    def fail_set_led(led_value: int, led_address: int = 0x00) -> None:
+        raise RuntimeError("led shutdown failed")
+
+    device.SetLED = fail_set_led
+
+    device.close()
+
+    assert handle.close_calls == 1
+    assert handle.open is False
+    assert device._opened is False
+
+
+def test_close_skips_led_shutdown_when_led_address_is_missing():
+    handle = FakeFrontPanel()
+    handle.open = True
+    device = make_uninitialized_device(handle)
+    device._led_used = True
+    device._led_address = None
+    set_led_calls = []
+
+    def record_set_led(led_value: int, led_address: int = 0x00) -> None:
+        set_led_calls.append((led_value, led_address))
+
+    device.SetLED = record_set_led
+
+    device.close()
+
+    assert set_led_calls == []
+    assert handle.close_calls == 1
+    assert handle.open is False
+    assert device._opened is False
+
+
 def test_close_twice_is_noop_on_second_call():
     handle = FakeFrontPanel()
     handle.open = True
@@ -171,6 +240,67 @@ def test_explicit_close_detaches_fallback_finalizer():
 
     assert finalizer.alive is False
     assert handle.close_calls == 1
+
+
+def test_xem7310_constructor_uses_board_module_get_ok(monkeypatch, bitstream_path):
+    monkeypatch.setattr(fpga_xem7310, "get_ok", lambda: FakeOk)
+
+    device = fpga.XEM7310(bitstream_path)
+
+    try:
+        assert isinstance(device, fpga.XEM)
+        assert device.config.product_id == FakeFrontPanel.brdXEM7310A75
+        assert device.is_open() is True
+        assert FakeFrontPanel.instances[0].configure_calls == [bitstream_path]
+    finally:
+        device.close()
+
+
+def test_xem7360_constructor_uses_board_module_get_ok(monkeypatch, bitstream_path):
+    FakeFrontPanel.product_name = "XEM7360"
+    FakeFrontPanel.product_id = FakeFrontPanel.brdXEM7360K160T
+    monkeypatch.setattr(fpga_xem7360, "get_ok", lambda: FakeOk)
+
+    device = fpga.XEM7360(bitstream_path)
+
+    try:
+        assert isinstance(device, fpga.XEM)
+        assert device.config.product_id == FakeFrontPanel.brdXEM7360K160T
+        assert device._vadj_voltage_dict == {
+            "vadj1": 1.2,
+            "vadj2": 1.2,
+            "vadj3": 1.2,
+        }
+        assert device.is_open() is True
+        assert FakeFrontPanel.instances[0].configure_calls == [bitstream_path]
+    finally:
+        device.close()
+
+
+def test_xem7310_wrong_board_fails_before_configure(monkeypatch, bitstream_path):
+    FakeFrontPanel.product_name = "XEM7360"
+    FakeFrontPanel.product_id = FakeFrontPanel.brdXEM7360K160T
+    monkeypatch.setattr(fpga_xem7310, "get_ok", lambda: FakeOk)
+
+    with pytest.raises(TypeError, match="XEM7310A75/A200"):
+        fpga.XEM7310(bitstream_path)
+
+    handle = FakeFrontPanel.instances[0]
+    assert handle.close_calls == 1
+    assert handle.configure_calls == []
+
+
+def test_xem7360_wrong_board_fails_before_configure(monkeypatch, bitstream_path):
+    FakeFrontPanel.product_name = "XEM7310"
+    FakeFrontPanel.product_id = FakeFrontPanel.brdXEM7310A75
+    monkeypatch.setattr(fpga_xem7360, "get_ok", lambda: FakeOk)
+
+    with pytest.raises(TypeError, match="XEM7360K160T"):
+        fpga.XEM7360(bitstream_path)
+
+    handle = FakeFrontPanel.instances[0]
+    assert handle.close_calls == 1
+    assert handle.configure_calls == []
 
 
 def test_configure_failure_after_open_closes_handle(bitstream_path):
@@ -284,6 +414,86 @@ def test_missing_filename_bitstream_reports_checked_parent_bitstreams_path(
     message = str(exc_info.value)
     assert "../bitstreams" in message
     assert str(missing.resolve()) in message
+
+
+def test_write_register_logs_and_raises_on_negative_error_code(monkeypatch):
+    handle = FakeFrontPanel()
+
+    def write_register(addr: int, data: int) -> int:
+        return -1
+
+    handle.WriteRegister = write_register
+    device = make_uninitialized_device(handle)
+    messages = []
+    monkeypatch.setattr(fpga_base, "log_error", lambda message: messages.append(message))
+
+    with pytest.raises(RuntimeError, match="Failed to write register value"):
+        device.WriteRegister(0x1000, 0x1234)
+
+    assert len(messages) == 1
+    assert "WriteRegister failed - mock error -1" in messages[0]
+
+
+def test_read_register_logs_and_raises_on_negative_error_code(monkeypatch):
+    handle = FakeFrontPanel()
+
+    def read_register(addr: int) -> int:
+        return -1
+
+    handle.ReadRegister = read_register
+    device = make_uninitialized_device(handle)
+    messages = []
+    monkeypatch.setattr(fpga_base, "log_error", lambda message: messages.append(message))
+
+    with pytest.raises(RuntimeError, match="Failed to read register value"):
+        device.ReadRegister(0x1000)
+
+    assert len(messages) == 1
+    assert "ReadRegister failed - mock error -1" in messages[0]
+
+
+def test_read_register_logs_and_raises_on_runtime_error(monkeypatch):
+    handle = FakeFrontPanel()
+
+    def read_register(addr: int) -> int:
+        raise RuntimeError("Error -8")
+
+    handle.ReadRegister = read_register
+    device = make_uninitialized_device(handle)
+    messages = []
+    monkeypatch.setattr(fpga_base, "log_error", lambda message: messages.append(message))
+
+    with pytest.raises(RuntimeError, match="Failed to read register value") as exc_info:
+        device.ReadRegister(0x1000)
+
+    assert isinstance(exc_info.value.__cause__, RuntimeError)
+    assert "mock error -8" in str(exc_info.value)
+    assert "Error -8" not in str(exc_info.value)
+    assert len(messages) == 1
+    assert "ReadRegister failed - mock error -8" in messages[0]
+    assert "Error -8" not in messages[0]
+
+
+def test_read_register_runtime_error_falls_back_to_last_error(monkeypatch):
+    handle = FakeFrontPanel()
+
+    def read_register(addr: int) -> int:
+        raise RuntimeError("binding failed")
+
+    handle.ReadRegister = read_register
+    handle.GetLastError = lambda: -9
+    device = make_uninitialized_device(handle)
+    messages = []
+    monkeypatch.setattr(fpga_base, "log_error", lambda message: messages.append(message))
+
+    with pytest.raises(RuntimeError, match="Failed to read register value") as exc_info:
+        device.ReadRegister(0x1000)
+
+    assert "mock error -9" in str(exc_info.value)
+    assert "binding failed" not in str(exc_info.value)
+    assert len(messages) == 1
+    assert "ReadRegister failed - mock error -9" in messages[0]
+    assert "binding failed" not in messages[0]
 
 
 def test_diagnostics_returns_required_keys(bitstream_path):

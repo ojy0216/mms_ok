@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import time
 import types
 import weakref
@@ -24,11 +25,15 @@ from .fpga_components import (
     PipeOperations,
     TriggerOperations,
     WireOperations,
+    _ENDIAN_OMITTED,
 )
 from .fpga_config import FPGAConfig
 from .ok_setup import get_frontpanel_version, get_ok
 from .pipeoutdata import PipeOutData
 from .validation import validate_address, validate_wire_value
+
+
+_FRONTPANEL_ERROR_CODE_RE = re.compile(r"\bError\s+(-?\d+)\b")
 
 
 class XEM(ABC):
@@ -87,6 +92,7 @@ class XEM(ABC):
             self._validate_bitstream_path()
 
             self._connect()
+            self._validate_connected_board()
             self._configure()
 
             self.auto_wire_in = True
@@ -94,13 +100,17 @@ class XEM(ABC):
             self.auto_trigger_out = True
 
             self.verbose_level = 0
+            self.trigger_poll_interval = 0.001
 
             # Initialize components
             self.wire_ops = WireOperations(self.xem, self.config.wire_width)
             self.trigger_ops = TriggerOperations(self.xem, self.config.trigger_width)
             self.pipe_ops = PipeOperations(self.xem)
             self.block_pipe_ops = BlockPipeOperations(
-                self.xem, self.config.max_bt_blocksize
+                self.xem,
+                self.config.max_bt_blocksize,
+                usb_speed=self.config.usb_speed,
+                device_interface=self.config.device_interface_str,
             )
 
             self._check_device_settings()
@@ -119,6 +129,39 @@ class XEM(ABC):
             else:
                 self._detach_close_finalizer()
             raise
+
+    def _check_error_code(self, error_code: int, operation: str, failure_message: str) -> int:
+        if error_code < 0:
+            error_str = get_ok().okCFrontPanel.GetErrorString(error_code)
+            log_error(f"{operation} failed - {error_str}")
+            raise RuntimeError(f"{failure_message} ({error_str})")
+        return error_code
+
+    def _resolve_frontpanel_runtime_error(self, exc: RuntimeError) -> str:
+        match = _FRONTPANEL_ERROR_CODE_RE.search(str(exc))
+        if match is not None:
+            error_code = int(match.group(1))
+            return get_ok().okCFrontPanel.GetErrorString(error_code)
+
+        get_last_error = getattr(self.xem, "GetLastError", None)
+        if callable(get_last_error):
+            try:
+                error_code = get_last_error()
+            except Exception:
+                error_code = None
+            if isinstance(error_code, int) and error_code < 0:
+                return get_ok().okCFrontPanel.GetErrorString(error_code)
+
+        get_last_error_message = getattr(self.xem, "GetLastErrorMessage", None)
+        if callable(get_last_error_message):
+            try:
+                message = get_last_error_message()
+            except Exception:
+                message = None
+            if message:
+                return str(message)
+
+        return "Unknown FrontPanel runtime error"
 
     @staticmethod
     def _finalize_xem_handle(xem) -> None:
@@ -193,6 +236,15 @@ class XEM(ABC):
 
         self.config = FPGAConfig.from_device_info(device_info)
         self.config.validate()
+
+    def _validate_connected_board(self) -> None:
+        """
+        Validate that the connected board matches the concrete device class.
+
+        Base devices accept any connected board. Board-specific subclasses can
+        override this hook to fail before configuring an incompatible FPGA.
+        """
+        pass
 
     def _configure(self) -> None:
         """
@@ -352,15 +404,31 @@ class XEM(ABC):
             return
 
         logger.info("Closing device")
-        if self._led_used:
-            logger.info("Turning off the LEDs before closing the device!")
-            self.SetLED(led_value=0, led_address=self._led_address)
+        self._shutdown_leds_before_close()
         try:
             self.xem.Close()
         finally:
             self._opened = False
             self._detach_close_finalizer()
         logger.info("Device closed!")
+
+    def _shutdown_leds_before_close(self) -> None:
+        """Turn off LEDs during teardown as best effort; this must not raise."""
+        try:
+            if self._led_used:
+                led_address = self._led_address
+                if led_address is None:
+                    logger.warning(
+                        "Skipping LED shutdown before closing the device: "
+                        "LED usage was recorded without an LED address."
+                    )
+                else:
+                    logger.info("Turning off the LEDs before closing the device!")
+                    self.SetLED(led_value=0, led_address=led_address)
+        except Exception as exc:
+            logger.opt(exception=exc).warning(
+                "Failed to turn off LEDs before closing the device."
+            )
 
     def __exit__(
         self,
@@ -380,7 +448,7 @@ class XEM(ABC):
             None
         """
         self.close()
-    
+
     def set_verbose_level(self, verbose_level: int) -> None:
         """
         Set the verbose level for the FPGA device.
@@ -556,7 +624,10 @@ class XEM(ABC):
         self,
         ep_addr: int,
         data: Union[str, bytearray, np.ndarray],
-        reorder_str: bool = True,
+        endian: Union[str, bool] = _ENDIAN_OMITTED,
+        reorder_str: Optional[bool] = None,
+        *,
+        reverse: bool = False,
     ) -> int:
         """
         Write data to a pipe-in endpoint.
@@ -566,7 +637,9 @@ class XEM(ABC):
         Args:
             ep_addr (int): Pipe endpoint address
             data (Union[str, bytearray]): Data to write
-            reorder_str (bool): If True, reorder string data for FPGA (default: True)
+            endian (str): Byte order used for string and integer numpy array data
+            reorder_str (bool): Deprecated; use endian instead
+            reverse (bool): If True, transfer supported inputs from latest element/word first
 
         Returns:
             int: Number of bytes written
@@ -574,7 +647,9 @@ class XEM(ABC):
         Raises:
             ValueError: If data format is invalid
         """
-        written = self.pipe_ops.write_to_pipe_in(ep_addr, data, reorder_str)
+        written = self.pipe_ops.write_to_pipe_in(
+            ep_addr, data, endian, reorder_str=reorder_str, reverse=reverse
+        )
         if self.verbose_level > 0:
             logger.debug(
                 f"WriteToPipeIn >> Addr {hex(ep_addr)} | Wrote: {written} bytes"
@@ -582,7 +657,13 @@ class XEM(ABC):
         return written
 
     def ReadFromPipeOut(
-        self, ep_addr: int, data: Union[int, bytearray], reorder_str: bool = True
+        self,
+        ep_addr: int,
+        data: Union[int, bytearray],
+        endian: Union[str, bool] = _ENDIAN_OMITTED,
+        reorder_str: Optional[bool] = None,
+        *,
+        reverse: bool = False,
     ) -> PipeOutData:
         """
         Read data from a pipe-out endpoint.
@@ -592,15 +673,20 @@ class XEM(ABC):
         Args:
             ep_addr (int): Pipe endpoint address
             data (Union[str, bytearray]): Buffer to store read data
-            reorder_str (bool): If True, reorder received string data (default: True)
+            endian (str): Byte order used for formatted hex word data
+            reorder_str (bool): Deprecated; use endian instead
+            reverse (bool): If True, format hex_data from latest 32-bit word first
 
         Returns:
-            PipeOutData: Object containing read data and error code
+            PipeOutData: Object containing read data and successful return code
 
         Raises:
             ValueError: If data buffer format is invalid
+            RuntimeError: If the FrontPanel read operation returns an error code
         """
-        result = self.pipe_ops.read_from_pipe_out(ep_addr, data, reorder_str)
+        result = self.pipe_ops.read_from_pipe_out(
+            ep_addr, data, endian, reorder_str=reorder_str, reverse=reverse
+        )
         if self.verbose_level > 0:
             logger.debug(
                 f"ReadFromPipeOut >>  Addr {hex(ep_addr)} | Read: {result.error_code} bytes"
@@ -612,7 +698,10 @@ class XEM(ABC):
         ep_addr: int,
         data: Union[str, bytearray, np.ndarray],
         block_size: int = None,
-        reorder_str: bool = True,
+        endian: Union[str, bool] = _ENDIAN_OMITTED,
+        reorder_str: Optional[bool] = None,
+        *,
+        reverse: bool = False,
     ) -> int:
         """
         Write data to a block pipe-in endpoint.
@@ -624,7 +713,9 @@ class XEM(ABC):
             ep_addr (int): Block pipe endpoint address
             data (Union[str, bytearray]): Data block to write
             block_size (int): Number of bytes to write to the pipe
-            reorder_str (bool): If True, reorder string data for FPGA (default: True)
+            endian (str): Byte order used for string and integer numpy array data
+            reorder_str (bool): Deprecated; use endian instead
+            reverse (bool): If True, transfer supported inputs from latest element/word first
 
         Returns:
             int: Number of bytes written
@@ -633,7 +724,12 @@ class XEM(ABC):
             ValueError: If data format is invalid
         """
         written = self.block_pipe_ops.write_to_block_pipe_in(
-            ep_addr, data, block_size, reorder_str=reorder_str
+            ep_addr,
+            data,
+            block_size,
+            endian=endian,
+            reorder_str=reorder_str,
+            reverse=reverse,
         )
         if self.verbose_level > 0:
             logger.debug(
@@ -646,7 +742,10 @@ class XEM(ABC):
         ep_addr: int,
         data: Union[int, bytearray],
         block_size: int = None,
-        reorder_str: bool = True,
+        endian: Union[str, bool] = _ENDIAN_OMITTED,
+        reorder_str: Optional[bool] = None,
+        *,
+        reverse: bool = False,
     ) -> PipeOutData:
         """
         Read data from a block pipe-out endpoint.
@@ -658,16 +757,24 @@ class XEM(ABC):
             ep_addr (int): Block pipe endpoint address
             data (Union[int, bytearray]): Buffer to store read data
             block_size (int): Number of bytes to read from the pipe
-            reorder_str (bool): If True, reorder received string data (default: True)
+            endian (str): Byte order used for formatted hex word data
+            reorder_str (bool): Deprecated; use endian instead
+            reverse (bool): If True, format hex_data from latest 32-bit word first
 
         Returns:
-            PipeOutData: Object containing read data and error code
+            PipeOutData: Object containing read data and successful return code
 
         Raises:
             ValueError: If data buffer format is invalid
+            RuntimeError: If the FrontPanel read operation returns an error code
         """
         result = self.block_pipe_ops.read_from_block_pipe_out(
-            ep_addr, data, block_size, reorder_str
+            ep_addr,
+            data,
+            block_size,
+            endian=endian,
+            reorder_str=reorder_str,
+            reverse=reverse,
         )
         if self.verbose_level > 0:
             logger.debug(
@@ -735,7 +842,13 @@ class XEM(ABC):
             )
         return triggered
 
-    def CheckTriggered(self, ep_addr: int, mask: int, timeout: float = 1.0):
+    def CheckTriggered(
+        self,
+        ep_addr: int,
+        mask: int,
+        timeout: float = 1.0,
+        poll_interval: Optional[float] = None,
+    ):
         """
         Check if a trigger condition is met within a specified timeout.
 
@@ -743,10 +856,21 @@ class XEM(ABC):
             ep_addr (int): Trigger endpoint address
             mask (int): Bit mask specifying which trigger bits to check
             timeout (float): Maximum time to wait for trigger condition, in seconds (default: 1)
+            poll_interval (Optional[float]): Time to sleep between failed trigger
+                checks, in seconds. Defaults to ``self.trigger_poll_interval`` (1 ms
+                on initialized devices). Pass 0 to busy-poll without sleeping.
 
         Raises:
+            ValueError: If poll_interval is negative
             TimeoutError: If trigger condition is not met within the specified timeout
         """
+        default_poll_interval = getattr(self, "trigger_poll_interval", 0.001)
+        resolved_poll_interval = (
+            default_poll_interval if poll_interval is None else poll_interval
+        )
+        if resolved_poll_interval < 0:
+            raise ValueError("poll_interval must be non-negative")
+
         start_time = time.perf_counter()
         while True:
             if self.IsTriggered(ep_addr, mask, auto_update=True):
@@ -755,13 +879,16 @@ class XEM(ABC):
                         f"CheckTriggered >> Addr {hex(ep_addr)} | Mask {hex(mask)} | Trigger condition met."
                     )
                 return
-            if time.perf_counter() - start_time > timeout:
+            elapsed = time.perf_counter() - start_time
+            if elapsed >= timeout:
                 log_error(
                     f"Trigger ({hex(ep_addr)}) condition not met within {timeout}s",
                 )
                 raise TimeoutError(
                     f"Trigger ({hex(ep_addr)}) condition not met within timeout"
                 )
+            if resolved_poll_interval > 0:
+                time.sleep(min(resolved_poll_interval, timeout - elapsed))
 
     def WriteRegister(self, addr: int, data: int) -> int:
         """
@@ -773,11 +900,15 @@ class XEM(ABC):
 
         Returns:
             int: Error code (0 on success)
+
+        Raises:
+            RuntimeError: If the register write operation returns an error code
         """
         validate_address(0, 2**32 - 1, addr)
         validate_wire_value(data, 32)
 
         error_code = self.xem.WriteRegister(addr, data)
+        self._check_error_code(error_code, "WriteRegister", "Failed to write register value")
         if self.verbose_level > 0:
             logger.debug(f"WriteRegister >> Addr {hex(addr)} | Value: {data}")
         return error_code
@@ -791,173 +922,19 @@ class XEM(ABC):
 
         Returns:
             int: Value read from the register
+
+        Raises:
+            RuntimeError: If the register read operation returns an error code
         """
         validate_address(0, 2**32 - 1, addr)
 
-        value = self.xem.ReadRegister(addr)
+        try:
+            value = self.xem.ReadRegister(addr)
+        except RuntimeError as exc:
+            error_str = self._resolve_frontpanel_runtime_error(exc)
+            log_error(f"ReadRegister failed - {error_str}")
+            raise RuntimeError(f"Failed to read register value ({error_str})") from exc
+        self._check_error_code(value, "ReadRegister", "Failed to read register value")
         if self.verbose_level > 0:
             logger.debug(f"ReadRegister >> Addr {hex(addr)} | Value: {value}")
         return value
-
-
-class XEM7310(XEM):
-    """
-    XEM7310 FPGA device implementation.
-
-    Specific implementation for the XEM7310A75/A200 FPGA boards. Provides
-    configuration and control for these models, including 8-LED display control.
-
-    Attributes:
-        Inherits all attributes from XEM base class
-
-    Example:
-        >>> fpga = XEM7310("bitstream.bit")
-    """
-
-    def __init__(self, bitstream_path: str) -> None:
-        """
-        Initialize XEM7310 FPGA device.
-
-        Args:
-            bitstream_path (str): Path to the bitstream file (.bit)
-
-        Raises:
-            TypeError: If connected device is not a XEM7310A75/A200
-            Plus all exceptions from parent class __init__
-        """
-        super().__init__(bitstream_path=bitstream_path)
-        try:
-            ok = get_ok()
-
-            target_product_id_list = [
-                ok.okCFrontPanel.brdXEM7310A75,
-                ok.okCFrontPanel.brdXEM7310A200,
-            ]
-
-            if self.config.product_id not in target_product_id_list:
-                log_critical("Connected FPGA board is not a XEM7310A75/A200!")
-                raise TypeError("Connected FPGA board is not a XEM7310A75/A200!")
-        except Exception:
-            self.close()
-            raise
-
-    def _check_device_settings(self) -> None:
-        """No additional settings to check for XEM7310."""
-        pass
-
-    def SetLED(self, led_value: int, led_address: int = 0x00) -> None:
-        """
-        Control the 8 LEDs on the XEM7310 board.
-
-        Args:
-            led_value (int): 8-bit value controlling LED states (0-255)
-            led_address (int): Wire address for LED control (default: 0x00)
-
-        Raises:
-            ValueError: If led_value is outside valid range (0-255)
-        """
-        validate_address(0x00, 0x1F, led_address)
-        validate_wire_value(led_value, 8)  # 8 LEDs on XEM7310
-
-        self._led_used = True
-        self._led_address = self._led_address or led_address
-        logger.info(
-            f"Setting LED value to {led_value} ({np.binary_repr(led_value, width=8)})"
-        )
-
-        self.SetWireInValue(self._led_address, led_value, auto_update=True)
-
-
-class XEM7360(XEM):
-    """
-    XEM7360 FPGA device implementation.
-
-    Specific implementation for the XEM7360K160T FPGA board. Provides configuration
-    and control features, including 4-LED display and voltage settings verification.
-
-    Attributes:
-        Inherits all attributes from XEM base class
-
-    Example:
-        >>> fpga = XEM7360("bitstream.bit")
-    """
-
-    def __init__(self, bitstream_path: str) -> None:
-        """
-        Initialize XEM7360 FPGA device.
-
-        Args:
-            bitstream_path (str): Path to the bitstream file (.bit)
-
-        Raises:
-            TypeError: If connected device is not a XEM7360K160T
-            Plus all exceptions from parent class __init__
-        """
-        super().__init__(bitstream_path=bitstream_path)
-        try:
-            ok = get_ok()
-
-            target_product_id = ok.okCFrontPanel.brdXEM7360K160T
-
-            if self.config.product_id != target_product_id:
-                log_critical("Connected FPGA board is not a XEM7360K160T!")
-                raise TypeError("Connected FPGA board is not a XEM7360K160T!")
-        except Exception:
-            self.close()
-            raise
-
-    def _check_device_settings(self) -> None:
-        """
-        Check voltage settings for XEM7360.
-
-        Verifies I/O voltage settings for different banks and logs warnings
-        if voltages are set below 120mV.
-        """
-        ok = get_ok()
-        device_settings = ok.okCDeviceSettings()
-
-        ok.okCFrontPanel.GetDeviceSettings(self.xem, device_settings)
-
-        try:
-            vadj_voltage_dict = {
-                f"vadj{i}": device_settings.GetInt(f"XEM7360_VADJ{i}_VOLTAGE") / 100
-                for i in range(1, 3 + 1)
-            }
-            self._vadj_voltage_dict = vadj_voltage_dict
-
-            vadj_modes = device_settings.GetInt("XEM7360_VADJ_MODE")
-
-            vadj_mask = 0b0000_0011
-            for i in range(1, 3 + 1):
-                vadj_mode = (vadj_modes & vadj_mask) >> (2 * (i - 1))
-                if vadj_mode < 2:
-                    logger.warning(f"vadj{i} will be set to 1.20 V!")
-                    logger.warning(
-                        "Please refer to https://docs.opalkelly.com/xem7360/device-settings/"
-                    )
-
-                vadj_mask <<= 2
-        except Exception as e:
-            logger.exception(f"Error getting device settings: {e}")
-
-    def SetLED(self, led_value: int, led_address: int = 0x00) -> None:
-        """
-        Control the 4 LEDs on the XEM7360 board.
-
-        Args:
-            led_value (int): 4-bit value controlling LED states (0-15)
-            led_address (int): Wire address for LED control (default: 0x00)
-
-        Raises:
-            ValueError: If led_value is outside valid range (0-15)
-        """
-        validate_address(0x00, 0x1F, led_address)
-        validate_wire_value(led_value, 4)  # 4 LEDs on XEM7360
-
-        self._led_used = True
-        self._led_address = self._led_address or led_address
-        logger.info(
-            f"Setting LED value to {led_value} ({np.binary_repr(led_value, width=4)})"
-        )
-
-        self.SetWireInValue(self._led_address, led_value, auto_update=True)

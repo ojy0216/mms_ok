@@ -4,6 +4,7 @@ import os
 
 import pytest
 
+import mms_ok
 from mms_ok import cli
 from mms_ok import doctor
 
@@ -153,6 +154,26 @@ def test_existing_version_subcommand_still_dispatches(capsys):
     assert captured.out == f"v{cli.__version__}\n"
 
 
+def test_bist_subcommand_exits_success_when_bist_passes(monkeypatch):
+    class PassingBIST:
+        def run_test(self):
+            return True
+
+    monkeypatch.setattr(mms_ok, "BIST", PassingBIST)
+
+    assert cli.main(["bist"]) == 0
+
+
+def test_bist_subcommand_exits_failure_when_bist_fails(monkeypatch):
+    class FailingBIST:
+        def run_test(self):
+            return False
+
+    monkeypatch.setattr(mms_ok, "BIST", FailingBIST)
+
+    assert cli.main(["bist"]) == cli.EXIT_BIST_FAILED
+
+
 def test_doctor_success_reports_api_and_device_count(monkeypatch, tmp_path, capsys):
     lib_dir = str(tmp_path / "cache")
     sdk_dir = str(tmp_path / "sdk")
@@ -181,6 +202,8 @@ def test_doctor_success_reports_api_and_device_count(monkeypatch, tmp_path, caps
     assert "9.9.9" in captured.out
     assert "Device count" in captured.out
     assert "2" in captured.out
+    assert "PASS" in captured.out
+    assert "FAIL" not in captured.out
 
 
 def test_doctor_failure_reports_guidance(monkeypatch, tmp_path, capsys):
@@ -212,6 +235,7 @@ def test_doctor_failure_reports_guidance(monkeypatch, tmp_path, capsys):
     assert "missing" in captured.out
     assert "mms_ok reset-cache" in captured.out
     assert "64-bit Python" in captured.out
+    assert "FAIL" in captured.out
 
 
 def test_doctor_fails_when_frontpanel_api_probe_fails(
@@ -355,6 +379,8 @@ def test_doctor_warning_only_zero_devices_exits_success(
     assert status == 0
     assert "Device count" in captured.out
     assert "0" in captured.out
+    assert "PASS" in captured.out
+    assert "FAIL" not in captured.out
 
 
 def test_reset_cache_uses_resolved_default_path(monkeypatch, capsys):

@@ -5,6 +5,14 @@ from dataclasses import dataclass
 from loguru import logger
 
 from .ok_setup import get_ok
+from .validation import BlockPipeTransportPolicy
+
+
+def _lookup_label(values, index: int) -> str:
+    try:
+        return values[index]
+    except (IndexError, TypeError):
+        return values[0]
 
 
 @dataclass
@@ -49,15 +57,20 @@ class FPGAConfig:
         """
         interface_list = ["Unknown", "USB 2", "PCIe", "USB 3"]
         usb_speed_list = ["Unknown", "FULL", "HIGH", "SUPER"]
-        bt_max_blocksize_list = [-1, 64, 1024, 16384]
         return cls(
             product_name=device_info.productName,
             serial_number=device_info.serialNumber,
             product_id=device_info.productID,
             device_interface=device_info.deviceInterface,
-            device_interface_str=interface_list[device_info.deviceInterface],
-            max_bt_blocksize=bt_max_blocksize_list[device_info.deviceInterface],
-            usb_speed=usb_speed_list[device_info.usbSpeed],
+            device_interface_str=_lookup_label(
+                interface_list, device_info.deviceInterface
+            ),
+            max_bt_blocksize=BlockPipeTransportPolicy(
+                -1,
+                usb_speed=device_info.usbSpeed,
+                device_interface=device_info.deviceInterface,
+            ).device_max_block_size,
+            usb_speed=_lookup_label(usb_speed_list, device_info.usbSpeed),
             wire_width=device_info.wireWidth,
             trigger_width=device_info.triggerWidth,
             pipe_width=device_info.pipeWidth,

@@ -1,20 +1,73 @@
+from typing import Any, Optional
+
 import numpy as np
 
-from .diagnostics import log_error
+from .diagnostics import log_error, log_warning
 
 
-def reorder_hex_words(hex_str: str) -> str:
-    if len(hex_str) % 8 != 0:
-        log_error("Hexadecimal string length must be a multiple of 8!")
-        raise ValueError("Hexadecimal string length must be a multiple of 8!")
+REORDER_STR_WARNING = "`reorder_str` is deprecated; use `endian` instead."
+_ENDIAN_OMITTED = object()
+
+
+def reorder_hex_words(hex_str: str, word_byte_width: int = 4) -> str:
+    word_hex_width = word_byte_width * 2
+    if len(hex_str) % word_hex_width != 0:
+        message = (
+            f"Hexadecimal string length must be a multiple of {word_hex_width}!"
+        )
+        log_error(message)
+        raise ValueError(message)
 
     return "".join(
-        hex_str[i + 6 : i + 8]
-        + hex_str[i + 4 : i + 6]
-        + hex_str[i + 2 : i + 4]
-        + hex_str[i : i + 2]
-        for i in range(0, len(hex_str), 8)
+        "".join(
+            hex_str[i + j : i + j + 2]
+            for j in range(word_hex_width - 2, -1, -2)
+        )
+        for i in range(0, len(hex_str), word_hex_width)
     )
+
+
+def validate_endian(endian: str) -> str:
+    if endian not in ("little", "big"):
+        message = "endian must be 'little' or 'big'"
+        log_error(message)
+        raise ValueError(message)
+    return endian
+
+
+def bytes_to_hex_words(
+    data: bytearray, word_byte_width: int = 4, endian: str = "little"
+) -> str:
+    validate_endian(endian)
+    if len(data) % word_byte_width != 0:
+        message = f"Data length must be a multiple of {word_byte_width} bytes!"
+        log_error(message)
+        raise ValueError(message)
+
+    word_hex_width = word_byte_width * 2
+    return "".join(
+        "{:0{}X}".format(
+            int.from_bytes(data[i : i + word_byte_width], byteorder=endian),
+            word_hex_width,
+        )
+        for i in range(0, len(data), word_byte_width)
+    )
+
+
+def reverse_hex_32bit_words(hex_str: str) -> str:
+    word_hex_width = 8
+    if len(hex_str) % word_hex_width != 0:
+        message = (
+            f"Hexadecimal string length must be a multiple of {word_hex_width}!"
+        )
+        log_error(message)
+        raise ValueError(message)
+
+    words = [
+        hex_str[i : i + word_hex_width]
+        for i in range(0, len(hex_str), word_hex_width)
+    ]
+    return "".join(reversed(words))
 
 
 class PipeOutData:
@@ -22,7 +75,7 @@ class PipeOutData:
     Represents data received from a pipe out interface.
 
     Attributes:
-        error_code (int): The error code associated with the data.
+        error_code (int): The successful FrontPanel return code associated with the data.
         raw_data (bytearray): The raw binary data received.
         hex_data (str): Hexadecimal string representation of the data.
 
@@ -35,21 +88,39 @@ class PipeOutData:
     """
 
     def __init__(
-        self, error_code: int, raw_data: bytearray, reorder_str: bool = False
+        self,
+        error_code: int,
+        raw_data: bytearray,
+        reorder_str: Optional[bool] = None,
+        word_byte_width: int = 4,
+        endian: Any = _ENDIAN_OMITTED,
+        reverse: bool = False,
     ) -> None:
         """
         Initialize a PipeOutData object.
 
         Args:
-            error_code (int): The error code associated with the data.
+            error_code (int): The successful FrontPanel return code associated with the data.
             raw_data (bytearray): The raw binary data received.
-            reorder_str (bool): Whether to reorder the hex string representation.
+            reorder_str (bool): Deprecated; use endian instead.
+            word_byte_width (int): Number of bytes in each word used for hex formatting.
+            endian (str): Byte order used for formatted hex word data.
+            reverse (bool): If True, format hex_data from latest 32-bit word first.
         """
+        if endian is _ENDIAN_OMITTED:
+            endian = "little"
+            if reorder_str is not None:
+                log_warning(REORDER_STR_WARNING)
+                endian = "little" if reorder_str else "big"
+        elif reorder_str is not None:
+            log_warning(REORDER_STR_WARNING)
+        validate_endian(endian)
         self.__error_code = error_code
         self.__raw_data = raw_data
-
-        hex_str = raw_data.hex().upper()
-        self.__hex_data = reorder_hex_words(hex_str) if reorder_str else hex_str
+        hex_data = bytes_to_hex_words(raw_data, word_byte_width, endian)
+        if reverse:
+            hex_data = reverse_hex_32bit_words(hex_data)
+        self.__hex_data = hex_data
 
     @property
     def error_code(self) -> int:
@@ -68,8 +139,8 @@ class PipeOutData:
         return max(self.__error_code, 0)
 
     def __repr__(self) -> str:
-        return "PipeOutData(error_code={}, transfer_byte={}, hex_data={!r})".format(
-            self.error_code, self.transfer_byte, self.hex_data
+        return "PipeOutData(transfer_byte={}, hex_data={!r})".format(
+            self.transfer_byte, self.hex_data
         )
 
     def __eq__(self, other) -> bool:

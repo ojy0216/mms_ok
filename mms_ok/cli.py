@@ -37,6 +37,7 @@ LOCK_GUIDANCE = (
 EXIT_SDK_UNAVAILABLE = 1
 EXIT_NO_DEVICES = 2
 EXIT_DISCOVERY_ERROR = 3
+EXIT_BIST_FAILED = 4
 
 
 MENU_COMMANDS = (
@@ -57,8 +58,7 @@ KEY_UNKNOWN = "unknown"
 def _run_bist(_args) -> int:
     from . import BIST
 
-    BIST().run_test()
-    return 0
+    return 0 if BIST().run_test() else EXIT_BIST_FAILED
 
 
 def _setup_frontpanel(_args) -> int:

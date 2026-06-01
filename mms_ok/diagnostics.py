@@ -43,6 +43,13 @@ def log_error(message: str) -> None:
         logger.error(f"Origin: {caller}")
 
 
+def log_warning(message: str) -> None:
+    logger.warning(message)
+    caller = _external_caller()
+    if caller is not None:
+        logger.warning(f"Origin: {caller}")
+
+
 def log_critical(message: str) -> None:
     logger.critical(message)
     caller = _external_caller()

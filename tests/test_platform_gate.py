@@ -125,6 +125,30 @@ def test_windows_simulated_import_does_not_require_colorama() -> None:
     assert result.returncode == 0, result.stderr
 
 
+def test_windows_simulated_fpga_facade_import_identities() -> None:
+    result = _run_python(
+        "import os\n"
+        "from loguru import logger as _logger\n"
+        "original = os.name\n"
+        "os.name = 'nt'\n"
+        "try:\n"
+        "    import mms_ok\n"
+        "    from mms_ok import fpga\n"
+        "    from mms_ok.fpga_base import XEM\n"
+        "    from mms_ok.fpga_xem7310 import XEM7310\n"
+        "    from mms_ok.fpga_xem7360 import XEM7360\n"
+        "    assert fpga.XEM is XEM\n"
+        "    assert fpga.XEM7310 is XEM7310\n"
+        "    assert fpga.XEM7360 is XEM7360\n"
+        "    assert mms_ok.XEM7310 is XEM7310\n"
+        "    assert mms_ok.XEM7360 is XEM7360\n"
+        "finally:\n"
+        "    os.name = original\n"
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
 def test_platform_gate_import_surface_is_safe() -> None:
     gate_path = PROJECT_ROOT / "mms_ok" / "_platform_gate.py"
     tree = ast.parse(gate_path.read_text())

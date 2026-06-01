@@ -258,6 +258,18 @@ class BIST:
 
         console.print(table)
 
-    def run_test(self):
+    def functional_test_passed(self) -> bool:
+        return all(
+            correct == NUM_TEST_CHANNELS
+            for correct in (
+                self.wire_correct,
+                self.pipe_correct,
+                self.btpipe_correct,
+                self.trigger_correct,
+            )
+        )
+
+    def run_test(self) -> bool:
         self.functional_test()
         self.print_functional_test_results()
+        return self.functional_test_passed()

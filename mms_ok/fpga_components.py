@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 import numpy as np
 
@@ -22,10 +22,53 @@ from .address import (
     WIRE_OUT_END,
     WIRE_OUT_START,
 )
-from .diagnostics import log_error
+from .diagnostics import log_error, log_warning
 from .ok_setup import get_ok
-from .pipeoutdata import PipeOutData, reorder_hex_words
-from .validation import validate_address, validate_block_size, validate_wire_value
+from .pipeoutdata import (
+    REORDER_STR_WARNING,
+    PipeOutData,
+    reorder_hex_words,
+    validate_endian,
+)
+from .validation import (
+    BlockPipeTransportPolicy,
+    validate_address,
+    validate_wire_value,
+)
+
+
+_ENDIAN_OMITTED = object()
+
+
+def _resolve_pipe_endian(endian: Any, reorder_str: Optional[bool]) -> str:
+    if endian is _ENDIAN_OMITTED:
+        if reorder_str is None:
+            return "little"
+        log_warning(REORDER_STR_WARNING)
+        return "little" if reorder_str else "big"
+    if isinstance(endian, bool):
+        log_warning(REORDER_STR_WARNING)
+        return "little" if endian else "big"
+    if reorder_str is not None:
+        log_warning(REORDER_STR_WARNING)
+    validate_endian(endian)
+    return endian
+
+
+def _format_hex_for_bit_width(value: int, bit_width: int) -> str:
+    hex_digits = max(1, (bit_width + 3) // 4)  # Calculate required hex digits
+    separator_count = (hex_digits - 1) // 4
+    display_width = hex_digits + separator_count
+    return f"0x{value:0{display_width}_X}"
+
+
+def _check_error_code(error_code: int, operation: str, failure_message: str) -> int:
+    if error_code < 0:
+        ok = get_ok()
+        error_str = ok.okCFrontPanel.GetErrorString(error_code)
+        log_error(f"{operation} failed - {error_str}")
+        raise RuntimeError(f"{failure_message} ({error_str})")
+    return error_code
 
 
 class WireOperations:
@@ -74,21 +117,18 @@ class WireOperations:
             mask = (1 << self.wire_width) - 1
         else:
             if not 0 <= mask < (1 << self.wire_width):
-                hex_str_len = int(2 * (np.log2(self.wire_width) - 1))
                 message = (
                     f"Invalid mask (0x{mask:0_X})! It should be in "
-                    f"0x{0:0{hex_str_len}_X} ~ 0x{((1 << self.wire_width) - 1):0{hex_str_len}_X}"
+                    f"{_format_hex_for_bit_width(0, self.wire_width)} ~ "
+                    f"{_format_hex_for_bit_width((1 << self.wire_width) - 1, self.wire_width)}"
                 )
                 log_error(message)
                 raise ValueError(message)
 
         error_code = self.xem.SetWireInValue(ep_addr, value, mask)
-        if error_code < 0:
-            ok = get_ok()
-            log_error(
-                f"SetWireInValue failed - {ok.okCFrontPanel.GetErrorString(error_code)}",
-            )
-        return error_code
+        return _check_error_code(
+            error_code, "SetWireInValue", "Failed to set wire-in value"
+        )
 
     def update_wire_ins(self) -> int:
         """
@@ -101,12 +141,9 @@ class WireOperations:
             int: Error code (0 on success)
         """
         error_code = self.xem.UpdateWireIns()
-        if error_code < 0:
-            ok = get_ok()
-            log_error(
-                f"UpdateWireIns failed - {ok.okCFrontPanel.GetErrorString(error_code)}",
-            )
-        return error_code
+        return _check_error_code(
+            error_code, "UpdateWireIns", "Failed to update wire-ins"
+        )
 
     def update_wire_outs(self) -> int:
         """
@@ -118,12 +155,9 @@ class WireOperations:
             int: Error code (0 on success)
         """
         error_code = self.xem.UpdateWireOuts()
-        if error_code < 0:
-            ok = get_ok()
-            log_error(
-                f"UpdateWireOuts failed - {ok.okCFrontPanel.GetErrorString(error_code)}",
-            )
-        return error_code
+        return _check_error_code(
+            error_code, "UpdateWireOuts", "Failed to update wire-outs"
+        )
 
     def get_wire_out(self, ep_addr: int) -> int:
         """
@@ -142,7 +176,10 @@ class WireOperations:
             update_wire_outs() must be called before this method to get current values.
         """
         validate_address(WIRE_OUT_START, WIRE_OUT_END, ep_addr)
-        return self.xem.GetWireOutValue(ep_addr)
+        return_data = self.xem.GetWireOutValue(ep_addr)
+        error_code = self.xem.GetLastError()
+        _check_error_code(error_code, "GetWireOutValue", "Failed to get wire-out value")
+        return return_data
 
 
 class TriggerOperations:
@@ -191,12 +228,9 @@ class TriggerOperations:
             raise ValueError(message)
 
         error_code = self.xem.ActivateTriggerIn(ep_addr, bit)
-        if error_code < 0:
-            ok = get_ok()
-            log_error(
-                f"ActivateTriggerIn failed - {ok.okCFrontPanel.GetErrorString(error_code)}",
-            )
-        return error_code
+        return _check_error_code(
+            error_code, "ActivateTriggerIn", "Failed to activate trigger-in"
+        )
 
     def update_trigger_outs(self) -> int:
         """
@@ -208,12 +242,9 @@ class TriggerOperations:
             int: Error code (0 on success)
         """
         error_code = self.xem.UpdateTriggerOuts()
-        if error_code < 0:
-            ok = get_ok()
-            log_error(
-                f"UpdateTriggerOuts failed - {ok.okCFrontPanel.GetErrorString(error_code)}",
-            )
-        return error_code
+        return _check_error_code(
+            error_code, "UpdateTriggerOuts", "Failed to update trigger-outs"
+        )
 
     def is_triggered(self, ep_addr: int, mask: int) -> bool:
         """
@@ -238,7 +269,8 @@ class TriggerOperations:
             hex_str_len = int(2 * (np.log2(self.trigger_width) - 1))
             message = (
                 f"Invalid mask (0x{mask:0_X})! It should be in "
-                f"0x{0:0{hex_str_len}_X} ~ 0x{((1 << self.trigger_width) - 1):0{hex_str_len}_X}"
+                f"{_format_hex_for_bit_width(0, self.trigger_width)} ~ "
+                f"{_format_hex_for_bit_width((1 << self.trigger_width) - 1, self.trigger_width)}"
             )
             log_error(message)
             raise ValueError(message)
@@ -285,15 +317,70 @@ class PipeOperations:
         """
         return reorder_hex_words(hex_str)
 
+    @staticmethod
+    def _hex_words_to_bytearray(
+        hex_str: str, word_byte_width: int, endian: str, reverse: bool = False
+    ) -> bytearray:
+        word_hex_width = word_byte_width * 2
+        normalized_hex = bytearray.fromhex(hex_str).hex()
+        if len(normalized_hex) % word_hex_width != 0:
+            message = (
+                f"Hexadecimal string length must be a multiple of {word_hex_width}!"
+            )
+            log_error(message)
+            raise ValueError(message)
+
+        if reverse:
+            reverse_hex_width = 8
+            if len(normalized_hex) % reverse_hex_width != 0:
+                message = (
+                    f"Hexadecimal string length must be a multiple of {reverse_hex_width}!"
+                )
+                log_error(message)
+                raise ValueError(message)
+            words = [
+                normalized_hex[i : i + reverse_hex_width]
+                for i in range(0, len(normalized_hex), reverse_hex_width)
+            ]
+            normalized_hex = "".join(reversed(words))
+
+        return bytearray(
+            b"".join(
+                int(normalized_hex[i : i + word_hex_width], 16).to_bytes(
+                    word_byte_width, byteorder=endian
+                )
+                for i in range(0, len(normalized_hex), word_hex_width)
+            )
+        )
+
+    @staticmethod
+    def _ndarray_to_bytearray(
+        data: np.ndarray, endian: str, reverse: bool = False
+    ) -> bytearray:
+        elements = np.ravel(data, order="C")
+        if reverse:
+            elements = elements[::-1]
+        contiguous = np.ascontiguousarray(elements)
+        if np.issubdtype(contiguous.dtype, np.integer):
+            target_dtype = contiguous.dtype.newbyteorder(
+                "<" if endian == "little" else ">"
+            )
+            return bytearray(contiguous.astype(target_dtype, copy=False).tobytes())
+        return bytearray(contiguous.tobytes())
+
     def _prepare_data(
-        self, data: Union[str, bytearray, np.ndarray], reorder_str: bool
+        self,
+        data: Union[str, bytearray, np.ndarray],
+        endian: str = "little",
+        reverse: bool = False,
     ) -> bytearray:
         """
         Prepare data for pipe operations.
 
         Args:
             data: Data to prepare (string, bytearray, or numpy array)
-            reorder_str: Whether to reorder string data
+            endian: Byte order used for string and integer numpy array data
+            reverse: If True, transfer supported inputs from latest element/word first
 
         Returns:
             bytearray: Prepared data
@@ -302,13 +389,11 @@ class PipeOperations:
             ValueError: If data format is invalid
             TypeError: If data type is not supported
         """
+        validate_endian(endian)
         if isinstance(data, str):
-            if reorder_str:
-                data = bytearray.fromhex(self.reorder_hex_str(data))
-            else:
-                data = bytearray.fromhex(data)
+            data = self._hex_words_to_bytearray(data, 4, endian, reverse=reverse)
         elif isinstance(data, np.ndarray):
-            data = bytearray(data)
+            data = self._ndarray_to_bytearray(data, endian, reverse=reverse)
         elif not isinstance(data, bytearray):
             raise TypeError("Data must be a string, bytearray, or numpy array")
 
@@ -349,7 +434,10 @@ class PipeOperations:
         self,
         ep_addr: int,
         data: Union[str, bytearray, np.ndarray],
-        reorder_str: bool = True,
+        endian: Union[str, bool] = _ENDIAN_OMITTED,
+        reorder_str: Optional[bool] = None,
+        *,
+        reverse: bool = False,
     ) -> int:
         """
         Write data to a pipe-in endpoint.
@@ -357,7 +445,9 @@ class PipeOperations:
         Args:
             ep_addr (int): Pipe endpoint address (0x80 - 0x9F)
             data: Data to write
-            reorder_str (bool): Whether to reorder string data
+            endian (str): Byte order used for string and integer numpy array data
+            reorder_str (bool): Deprecated; use endian instead
+            reverse (bool): If True, transfer supported inputs from latest element/word first
 
         Returns:
             int: Error code (0 on success)
@@ -365,20 +455,24 @@ class PipeOperations:
         Raises:
             ValueError: If endpoint address or data format is invalid
         """
+        endian = _resolve_pipe_endian(endian, reorder_str)
         validate_address(PIPE_IN_START, PIPE_IN_END, ep_addr)
 
-        prepared_data = self._prepare_data(data, reorder_str)
+        prepared_data = self._prepare_data(data, endian, reverse=reverse)
 
         error_code = self.xem.WriteToPipeIn(ep_addr, prepared_data)
-        if error_code < 0:
-            ok = get_ok()
-            log_error(
-                f"WriteToPipeIn failed - {ok.okCFrontPanel.GetErrorString(error_code)}",
-            )
-        return error_code
+        return _check_error_code(
+            error_code, "WriteToPipeIn", "Failed to write to pipe-in"
+        )
 
     def read_from_pipe_out(
-        self, ep_addr: int, data: Union[int, bytearray], reorder_str: bool = True
+        self,
+        ep_addr: int,
+        data: Union[int, bytearray],
+        endian: Union[str, bool] = _ENDIAN_OMITTED,
+        reorder_str: Optional[bool] = None,
+        *,
+        reverse: bool = False,
     ) -> PipeOutData:
         """
         Read data from a pipe-out endpoint.
@@ -386,27 +480,30 @@ class PipeOperations:
         Args:
             ep_addr (int): Pipe endpoint address (0xA0 - 0xBF)
             data: Either a bytearray to use as buffer or an integer specifying buffer size
-            reorder_str (bool): Whether to reorder received string data
+            endian (str): Byte order used for formatted hex word data
+            reorder_str (bool): Deprecated; use endian instead
+            reverse (bool): If True, format hex_data from latest 32-bit word first
 
         Returns:
-            PipeOutData: Object containing read data and error code
+            PipeOutData: Object containing read data and successful return code
 
         Raises:
             ValueError: If endpoint address or buffer format is invalid
+            RuntimeError: If the FrontPanel read operation returns an error code
         """
+        endian = _resolve_pipe_endian(endian, reorder_str)
         validate_address(PIPE_OUT_START, PIPE_OUT_END, ep_addr)
 
         buffer = self._prepare_read_buffer(data)
 
         error_code = self.xem.ReadFromPipeOut(ep_addr, buffer)
-        if error_code < 0:
-            ok = get_ok()
-            log_error(
-                f"ReadFromPipeOut failed - {ok.okCFrontPanel.GetErrorString(error_code)}",
-            )
+        _check_error_code(error_code, "ReadFromPipeOut", "Failed to read from pipe-out")
 
         return PipeOutData(
-            error_code=error_code, raw_data=buffer, reorder_str=reorder_str
+            error_code=error_code,
+            raw_data=buffer,
+            endian=endian,
+            reverse=reverse,
         )
 
 
@@ -421,7 +518,13 @@ class BlockPipeOperations:
         xem (ok.okCFrontPanel): Low-level interface to the FPGA device
     """
 
-    def __init__(self, xem: ok.okCFrontPanel, bt_max_blocksize: int):
+    def __init__(
+        self,
+        xem: ok.okCFrontPanel,
+        bt_max_blocksize: int,
+        usb_speed: str = "SUPER",
+        device_interface: str = "USB 3",
+    ):
         """
         Initialize block pipe operations interface.
 
@@ -431,13 +534,53 @@ class BlockPipeOperations:
         self.xem = xem
         self.pipe_ops = PipeOperations(xem)
         self.bt_max_blocksize = bt_max_blocksize
+        self.usb_speed = usb_speed
+        self.device_interface = device_interface
+        self._transport_policy = BlockPipeTransportPolicy(
+            bt_max_blocksize,
+            usb_speed=usb_speed,
+            device_interface=device_interface,
+        )
+
+    def _word_byte_width(self) -> int:
+        return self._transport_policy.word_byte_width
+
+    def _prepare_data(
+        self,
+        data: Union[str, bytearray, np.ndarray],
+        endian: str = "little",
+        reverse: bool = False,
+    ) -> bytearray:
+        validate_endian(endian)
+        if isinstance(data, str):
+            data = PipeOperations._hex_words_to_bytearray(
+                data, self._word_byte_width(), endian, reverse=reverse
+            )
+        elif isinstance(data, np.ndarray):
+            data = PipeOperations._ndarray_to_bytearray(data, endian, reverse=reverse)
+        elif not isinstance(data, bytearray):
+            raise TypeError("Data must be a string, bytearray, or numpy array")
+        return data
+
+    def _prepare_read_buffer(self, data: Union[int, bytearray]) -> bytearray:
+        if isinstance(data, int):
+            return bytearray(data)
+        if isinstance(data, bytearray):
+            return data
+        raise TypeError("Data must be an integer or bytearray")
+
+    def _select_block_size(self, transfer_byte: int) -> int:
+        return self._transport_policy.select_block_size(transfer_byte)
 
     def write_to_block_pipe_in(
         self,
         ep_addr: int,
         data: Union[str, bytearray, np.ndarray],
         block_size: int = None,
-        reorder_str: bool = True,
+        endian: Union[str, bool] = _ENDIAN_OMITTED,
+        reorder_str: Optional[bool] = None,
+        *,
+        reverse: bool = False,
     ) -> int:
         """
         Write data to a block pipe-in endpoint.
@@ -446,7 +589,9 @@ class BlockPipeOperations:
             ep_addr (int): Block pipe endpoint address (0x80 - 0x9F)
             data: Data to write
             block_size (int): Number of bytes to write to the pipe
-            reorder_str (bool): Whether to reorder string data
+            endian (str): Byte order used for string and integer numpy array data
+            reorder_str (bool): Deprecated; use endian instead
+            reverse (bool): If True, transfer supported inputs from latest element/word first
 
         Returns:
             int: Error code (0 on success)
@@ -454,33 +599,30 @@ class BlockPipeOperations:
         Raises:
             ValueError: If endpoint address or data format is invalid
         """
+        endian = _resolve_pipe_endian(endian, reorder_str)
         validate_address(BLOCK_PIPE_IN_START, BLOCK_PIPE_IN_END, ep_addr)
 
-        prepared_data = self.pipe_ops._prepare_data(data, reorder_str)
+        prepared_data = self._prepare_data(data, endian, reverse=reverse)
 
         if block_size is None:
-            block_size = (
-                min(len(prepared_data), self.bt_max_blocksize)
-                if self.bt_max_blocksize > 0
-                else len(prepared_data)
-            )
+            block_size = self._select_block_size(len(prepared_data))
         else:
-            validate_block_size(block_size, self.bt_max_blocksize)
+            self._transport_policy.validate_block_size(block_size, len(prepared_data))
 
         error_code = self.xem.WriteToBlockPipeIn(ep_addr, block_size, prepared_data)
-        if error_code < 0:
-            ok = get_ok()
-            log_error(
-                f"WriteToBlockPipeIn failed - {ok.okCFrontPanel.GetErrorString(error_code)}",
-            )
-        return error_code
+        return _check_error_code(
+            error_code, "WriteToBlockPipeIn", "Failed to write to block pipe-in"
+        )
 
     def read_from_block_pipe_out(
         self,
         ep_addr: int,
         data: Union[int, bytearray],
         block_size: int = None,
-        reorder_str: bool = True,
+        endian: Union[str, bool] = _ENDIAN_OMITTED,
+        reorder_str: Optional[bool] = None,
+        *,
+        reverse: bool = False,
     ) -> PipeOutData:
         """
         Read data from a block pipe-out endpoint.
@@ -489,34 +631,36 @@ class BlockPipeOperations:
             ep_addr (int): Block pipe endpoint address (0xA0 - 0xBF)
             data: Either a bytearray to use as buffer or an integer specifying buffer size
             block_size (int): Number of bytes to read from the pipe
-            reorder_str (bool): Whether to reorder received string data
+            endian (str): Byte order used for formatted hex word data
+            reorder_str (bool): Deprecated; use endian instead
+            reverse (bool): If True, format hex_data from latest 32-bit word first
 
         Returns:
-            PipeOutData: Object containing read data and error code
+            PipeOutData: Object containing read data and successful return code
 
         Raises:
             ValueError: If endpoint address or buffer format is invalid
+            RuntimeError: If the FrontPanel read operation returns an error code
         """
+        endian = _resolve_pipe_endian(endian, reorder_str)
         validate_address(BLOCK_PIPE_OUT_START, BLOCK_PIPE_OUT_END, ep_addr)
 
-        buffer = self.pipe_ops._prepare_read_buffer(data)
+        buffer = self._prepare_read_buffer(data)
 
         if block_size is None:
-            block_size = (
-                min(len(buffer), self.bt_max_blocksize)
-                if self.bt_max_blocksize > 0
-                else len(buffer)
-            )
+            block_size = self._select_block_size(len(buffer))
         else:
-            validate_block_size(block_size, self.bt_max_blocksize)
+            self._transport_policy.validate_block_size(block_size, len(buffer))
 
         error_code = self.xem.ReadFromBlockPipeOut(ep_addr, block_size, buffer)
-        if error_code < 0:
-            ok = get_ok()
-            log_error(
-                f"ReadFromBlockPipeOut failed - {ok.okCFrontPanel.GetErrorString(error_code)}",
-            )
+        _check_error_code(
+            error_code, "ReadFromBlockPipeOut", "Failed to read from block pipe-out"
+        )
 
         return PipeOutData(
-            error_code=error_code, raw_data=buffer, reorder_str=reorder_str
+            error_code=error_code,
+            raw_data=buffer,
+            word_byte_width=self._word_byte_width(),
+            endian=endian,
+            reverse=reverse,
         )
