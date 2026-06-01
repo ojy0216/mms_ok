@@ -610,6 +610,8 @@ class XEM(ABC):
         data: Union[str, bytearray, np.ndarray],
         endian: Union[str, bool] = _ENDIAN_OMITTED,
         reorder_str: Optional[bool] = None,
+        *,
+        reverse: bool = False,
     ) -> int:
         """
         Write data to a pipe-in endpoint.
@@ -621,6 +623,7 @@ class XEM(ABC):
             data (Union[str, bytearray]): Data to write
             endian (str): Byte order used for string and integer numpy array data
             reorder_str (bool): Deprecated; use endian instead
+            reverse (bool): If True, transfer supported inputs from latest element/word first
 
         Returns:
             int: Number of bytes written
@@ -629,7 +632,7 @@ class XEM(ABC):
             ValueError: If data format is invalid
         """
         written = self.pipe_ops.write_to_pipe_in(
-            ep_addr, data, endian, reorder_str=reorder_str
+            ep_addr, data, endian, reorder_str=reorder_str, reverse=reverse
         )
         if self.verbose_level > 0:
             logger.debug(
@@ -643,6 +646,8 @@ class XEM(ABC):
         data: Union[int, bytearray],
         endian: Union[str, bool] = _ENDIAN_OMITTED,
         reorder_str: Optional[bool] = None,
+        *,
+        reverse: bool = False,
     ) -> PipeOutData:
         """
         Read data from a pipe-out endpoint.
@@ -654,6 +659,7 @@ class XEM(ABC):
             data (Union[str, bytearray]): Buffer to store read data
             endian (str): Byte order used for formatted hex word data
             reorder_str (bool): Deprecated; use endian instead
+            reverse (bool): If True, format hex_data from latest 32-bit word first
 
         Returns:
             PipeOutData: Object containing read data and successful return code
@@ -663,7 +669,7 @@ class XEM(ABC):
             RuntimeError: If the FrontPanel read operation returns an error code
         """
         result = self.pipe_ops.read_from_pipe_out(
-            ep_addr, data, endian, reorder_str=reorder_str
+            ep_addr, data, endian, reorder_str=reorder_str, reverse=reverse
         )
         if self.verbose_level > 0:
             logger.debug(
@@ -678,6 +684,8 @@ class XEM(ABC):
         block_size: int = None,
         endian: Union[str, bool] = _ENDIAN_OMITTED,
         reorder_str: Optional[bool] = None,
+        *,
+        reverse: bool = False,
     ) -> int:
         """
         Write data to a block pipe-in endpoint.
@@ -691,6 +699,7 @@ class XEM(ABC):
             block_size (int): Number of bytes to write to the pipe
             endian (str): Byte order used for string and integer numpy array data
             reorder_str (bool): Deprecated; use endian instead
+            reverse (bool): If True, transfer supported inputs from latest element/word first
 
         Returns:
             int: Number of bytes written
@@ -699,7 +708,12 @@ class XEM(ABC):
             ValueError: If data format is invalid
         """
         written = self.block_pipe_ops.write_to_block_pipe_in(
-            ep_addr, data, block_size, endian=endian, reorder_str=reorder_str
+            ep_addr,
+            data,
+            block_size,
+            endian=endian,
+            reorder_str=reorder_str,
+            reverse=reverse,
         )
         if self.verbose_level > 0:
             logger.debug(
@@ -714,6 +728,8 @@ class XEM(ABC):
         block_size: int = None,
         endian: Union[str, bool] = _ENDIAN_OMITTED,
         reorder_str: Optional[bool] = None,
+        *,
+        reverse: bool = False,
     ) -> PipeOutData:
         """
         Read data from a block pipe-out endpoint.
@@ -727,6 +743,7 @@ class XEM(ABC):
             block_size (int): Number of bytes to read from the pipe
             endian (str): Byte order used for formatted hex word data
             reorder_str (bool): Deprecated; use endian instead
+            reverse (bool): If True, format hex_data from latest 32-bit word first
 
         Returns:
             PipeOutData: Object containing read data and successful return code
@@ -736,7 +753,12 @@ class XEM(ABC):
             RuntimeError: If the FrontPanel read operation returns an error code
         """
         result = self.block_pipe_ops.read_from_block_pipe_out(
-            ep_addr, data, block_size, endian=endian, reorder_str=reorder_str
+            ep_addr,
+            data,
+            block_size,
+            endian=endian,
+            reorder_str=reorder_str,
+            reverse=reverse,
         )
         if self.verbose_level > 0:
             logger.debug(

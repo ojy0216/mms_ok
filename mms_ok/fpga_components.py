@@ -319,7 +319,7 @@ class PipeOperations:
 
     @staticmethod
     def _hex_words_to_bytearray(
-        hex_str: str, word_byte_width: int, endian: str
+        hex_str: str, word_byte_width: int, endian: str, reverse: bool = False
     ) -> bytearray:
         word_hex_width = word_byte_width * 2
         normalized_hex = bytearray.fromhex(hex_str).hex()
@@ -329,6 +329,20 @@ class PipeOperations:
             )
             log_error(message)
             raise ValueError(message)
+
+        if reverse:
+            reverse_hex_width = 8
+            if len(normalized_hex) % reverse_hex_width != 0:
+                message = (
+                    f"Hexadecimal string length must be a multiple of {reverse_hex_width}!"
+                )
+                log_error(message)
+                raise ValueError(message)
+            words = [
+                normalized_hex[i : i + reverse_hex_width]
+                for i in range(0, len(normalized_hex), reverse_hex_width)
+            ]
+            normalized_hex = "".join(reversed(words))
 
         return bytearray(
             b"".join(
@@ -340,8 +354,13 @@ class PipeOperations:
         )
 
     @staticmethod
-    def _ndarray_to_bytearray(data: np.ndarray, endian: str) -> bytearray:
-        contiguous = np.ascontiguousarray(data)
+    def _ndarray_to_bytearray(
+        data: np.ndarray, endian: str, reverse: bool = False
+    ) -> bytearray:
+        elements = np.ravel(data, order="C")
+        if reverse:
+            elements = elements[::-1]
+        contiguous = np.ascontiguousarray(elements)
         if np.issubdtype(contiguous.dtype, np.integer):
             target_dtype = contiguous.dtype.newbyteorder(
                 "<" if endian == "little" else ">"
@@ -353,6 +372,7 @@ class PipeOperations:
         self,
         data: Union[str, bytearray, np.ndarray],
         endian: str = "little",
+        reverse: bool = False,
     ) -> bytearray:
         """
         Prepare data for pipe operations.
@@ -360,6 +380,7 @@ class PipeOperations:
         Args:
             data: Data to prepare (string, bytearray, or numpy array)
             endian: Byte order used for string and integer numpy array data
+            reverse: If True, transfer supported inputs from latest element/word first
 
         Returns:
             bytearray: Prepared data
@@ -370,9 +391,9 @@ class PipeOperations:
         """
         validate_endian(endian)
         if isinstance(data, str):
-            data = self._hex_words_to_bytearray(data, 4, endian)
+            data = self._hex_words_to_bytearray(data, 4, endian, reverse=reverse)
         elif isinstance(data, np.ndarray):
-            data = self._ndarray_to_bytearray(data, endian)
+            data = self._ndarray_to_bytearray(data, endian, reverse=reverse)
         elif not isinstance(data, bytearray):
             raise TypeError("Data must be a string, bytearray, or numpy array")
 
@@ -415,6 +436,8 @@ class PipeOperations:
         data: Union[str, bytearray, np.ndarray],
         endian: Union[str, bool] = _ENDIAN_OMITTED,
         reorder_str: Optional[bool] = None,
+        *,
+        reverse: bool = False,
     ) -> int:
         """
         Write data to a pipe-in endpoint.
@@ -424,6 +447,7 @@ class PipeOperations:
             data: Data to write
             endian (str): Byte order used for string and integer numpy array data
             reorder_str (bool): Deprecated; use endian instead
+            reverse (bool): If True, transfer supported inputs from latest element/word first
 
         Returns:
             int: Error code (0 on success)
@@ -434,7 +458,7 @@ class PipeOperations:
         endian = _resolve_pipe_endian(endian, reorder_str)
         validate_address(PIPE_IN_START, PIPE_IN_END, ep_addr)
 
-        prepared_data = self._prepare_data(data, endian)
+        prepared_data = self._prepare_data(data, endian, reverse=reverse)
 
         error_code = self.xem.WriteToPipeIn(ep_addr, prepared_data)
         return _check_error_code(
@@ -447,6 +471,8 @@ class PipeOperations:
         data: Union[int, bytearray],
         endian: Union[str, bool] = _ENDIAN_OMITTED,
         reorder_str: Optional[bool] = None,
+        *,
+        reverse: bool = False,
     ) -> PipeOutData:
         """
         Read data from a pipe-out endpoint.
@@ -456,6 +482,7 @@ class PipeOperations:
             data: Either a bytearray to use as buffer or an integer specifying buffer size
             endian (str): Byte order used for formatted hex word data
             reorder_str (bool): Deprecated; use endian instead
+            reverse (bool): If True, format hex_data from latest 32-bit word first
 
         Returns:
             PipeOutData: Object containing read data and successful return code
@@ -476,6 +503,7 @@ class PipeOperations:
             error_code=error_code,
             raw_data=buffer,
             endian=endian,
+            reverse=reverse,
         )
 
 
@@ -521,14 +549,15 @@ class BlockPipeOperations:
         self,
         data: Union[str, bytearray, np.ndarray],
         endian: str = "little",
+        reverse: bool = False,
     ) -> bytearray:
         validate_endian(endian)
         if isinstance(data, str):
             data = PipeOperations._hex_words_to_bytearray(
-                data, self._word_byte_width(), endian
+                data, self._word_byte_width(), endian, reverse=reverse
             )
         elif isinstance(data, np.ndarray):
-            data = PipeOperations._ndarray_to_bytearray(data, endian)
+            data = PipeOperations._ndarray_to_bytearray(data, endian, reverse=reverse)
         elif not isinstance(data, bytearray):
             raise TypeError("Data must be a string, bytearray, or numpy array")
         return data
@@ -550,6 +579,8 @@ class BlockPipeOperations:
         block_size: int = None,
         endian: Union[str, bool] = _ENDIAN_OMITTED,
         reorder_str: Optional[bool] = None,
+        *,
+        reverse: bool = False,
     ) -> int:
         """
         Write data to a block pipe-in endpoint.
@@ -560,6 +591,7 @@ class BlockPipeOperations:
             block_size (int): Number of bytes to write to the pipe
             endian (str): Byte order used for string and integer numpy array data
             reorder_str (bool): Deprecated; use endian instead
+            reverse (bool): If True, transfer supported inputs from latest element/word first
 
         Returns:
             int: Error code (0 on success)
@@ -570,7 +602,7 @@ class BlockPipeOperations:
         endian = _resolve_pipe_endian(endian, reorder_str)
         validate_address(BLOCK_PIPE_IN_START, BLOCK_PIPE_IN_END, ep_addr)
 
-        prepared_data = self._prepare_data(data, endian)
+        prepared_data = self._prepare_data(data, endian, reverse=reverse)
 
         if block_size is None:
             block_size = self._select_block_size(len(prepared_data))
@@ -589,6 +621,8 @@ class BlockPipeOperations:
         block_size: int = None,
         endian: Union[str, bool] = _ENDIAN_OMITTED,
         reorder_str: Optional[bool] = None,
+        *,
+        reverse: bool = False,
     ) -> PipeOutData:
         """
         Read data from a block pipe-out endpoint.
@@ -599,6 +633,7 @@ class BlockPipeOperations:
             block_size (int): Number of bytes to read from the pipe
             endian (str): Byte order used for formatted hex word data
             reorder_str (bool): Deprecated; use endian instead
+            reverse (bool): If True, format hex_data from latest 32-bit word first
 
         Returns:
             PipeOutData: Object containing read data and successful return code
@@ -627,4 +662,5 @@ class BlockPipeOperations:
             raw_data=buffer,
             word_byte_width=self._word_byte_width(),
             endian=endian,
+            reverse=reverse,
         )

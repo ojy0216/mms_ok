@@ -90,9 +90,12 @@ class EndpointXEM(XEM):
     ],
 )
 def test_pipe_methods_keep_endian_before_reorder_str(owner, method_name):
-    parameters = list(inspect.signature(getattr(owner, method_name)).parameters)
+    signature = inspect.signature(getattr(owner, method_name))
+    parameters = list(signature.parameters)
 
-    assert parameters[-2:] == ["endian", "reorder_str"]
+    assert parameters.index("endian") + 1 == parameters.index("reorder_str")
+    assert parameters.index("reorder_str") + 1 == parameters.index("reverse")
+    assert signature.parameters["reverse"].kind is inspect.Parameter.KEYWORD_ONLY
 
 
 def test_write_to_pipe_in_hex_defaults_to_little_endian_words():
@@ -157,6 +160,25 @@ def test_write_to_pipe_in_hex_accepts_little_endian_words():
             bytes.fromhex("DDCCBBAA4433221188776655B2A10099"),
         )
     ]
+
+
+@pytest.mark.parametrize(
+    "kwargs,expected",
+    [
+        ({}, "B2A100998877665544332211DDCCBBAA"),
+        ({"endian": "little"}, "B2A100998877665544332211DDCCBBAA"),
+        ({"endian": "big"}, "9900A1B25566778811223344AABBCCDD"),
+    ],
+)
+def test_write_to_pipe_in_hex_reverse_reverses_word_order(kwargs, expected):
+    xem = CapturingPipeXem()
+    ops = PipeOperations(xem)
+
+    ops.write_to_pipe_in(
+        0x80, "AABBCCDD11223344556677889900A1B2", reverse=True, **kwargs
+    )
+
+    assert xem.pipe_in_calls == [(0x80, bytes.fromhex(expected))]
 
 
 @pytest.mark.parametrize(
@@ -263,6 +285,28 @@ def test_read_from_pipe_out_hex_accepts_little_endian_words():
     assert result.hex_data == "AABBCCDD11223344556677889900A1B2"
 
 
+def test_read_from_pipe_out_reverse_reverses_hex_32_bit_words_only():
+    raw = bytes.fromhex("DDCCBBAA4433221188776655B2A10099")
+    ops = PipeOperations(CapturingPipeXem(raw))
+    buffer = bytearray(16)
+
+    result = ops.read_from_pipe_out(0xA0, buffer, reverse=True)
+
+    assert result.raw_data is buffer
+    assert result.raw_data == bytearray(raw)
+    assert result.hex_data == "9900A1B25566778811223344AABBCCDD"
+
+
+def test_read_from_pipe_out_big_endian_reverse_reverses_hex_32_bit_words_only():
+    raw = bytes.fromhex("DDCCBBAA4433221188776655B2A10099")
+    ops = PipeOperations(CapturingPipeXem(raw))
+
+    result = ops.read_from_pipe_out(0xA0, 16, endian="big", reverse=True)
+
+    assert result.raw_data == bytearray(raw)
+    assert result.hex_data == "B2A100998877665544332211DDCCBBAA"
+
+
 def test_pipe_out_data_default_keeps_little_endian_without_warning():
     raw = bytearray.fromhex("DDCCBBAA4433221188776655B2A10099")
     result = None
@@ -328,6 +372,28 @@ def test_pipe_out_data_explicit_endian_overrides_reorder_str(
     assert result.hex_data == expected
 
 
+def test_pipe_out_data_explicit_endian_overrides_reorder_str_with_reverse():
+    raw = bytearray.fromhex("DDCCBBAA4433221188776655B2A10099")
+    result = None
+
+    def build():
+        nonlocal result
+        result = PipeOutData(
+            4,
+            raw,
+            reorder_str=True,
+            endian="big",
+            reverse=True,
+        )
+
+    messages = capture_warning_messages(build)
+
+    assert REORDER_STR_WARNING in messages
+    assert result is not None
+    assert result.raw_data == raw
+    assert result.hex_data == "B2A100998877665544332211DDCCBBAA"
+
+
 @pytest.mark.parametrize(
     "endian,reorder_str,expected",
     [
@@ -390,6 +456,28 @@ def test_read_from_pipe_out_keyword_reorder_str_without_endian_uses_legacy_order
     assert REORDER_STR_WARNING in messages
     assert result is not None
     assert result.hex_data == expected
+
+
+def test_read_from_pipe_out_reorder_str_warning_still_applies_with_reverse():
+    ops = PipeOperations(
+        CapturingPipeXem(bytes.fromhex("DDCCBBAA4433221188776655B2A10099"))
+    )
+    result = None
+
+    def read():
+        nonlocal result
+        result = ops.read_from_pipe_out(
+            0xA0,
+            16,
+            reorder_str=False,
+            reverse=True,
+        )
+
+    messages = capture_warning_messages(read)
+
+    assert REORDER_STR_WARNING in messages
+    assert result is not None
+    assert result.hex_data == "B2A100998877665544332211DDCCBBAA"
 
 
 @pytest.mark.parametrize(
@@ -488,6 +576,63 @@ def test_block_pipe_hex_usb3_uses_four_byte_words():
         (0x80, 16, bytes.fromhex("DDCCBBAA4433221188776655B2A10099"))
     ]
     assert result.hex_data == "AABBCCDD11223344556677889900A1B2"
+
+
+def test_read_from_block_pipe_out_usb3_reverse_reverses_hex_32_bit_words_only():
+    raw = bytes.fromhex("DDCCBBAA4433221188776655B2A10099")
+    ops = BlockPipeOperations(CapturingBlockPipeXem(raw), bt_max_blocksize=16384)
+    buffer = bytearray(16)
+
+    result = ops.read_from_block_pipe_out(0xA0, buffer, reverse=True)
+
+    assert result.raw_data is buffer
+    assert result.raw_data == bytearray(raw)
+    assert result.hex_data == "9900A1B25566778811223344AABBCCDD"
+
+
+def test_read_from_block_pipe_out_usb2_reverse_uses_32_bit_hex_words():
+    raw = bytes.fromhex("BBAADDCC22114433")
+    ops = BlockPipeOperations(
+        CapturingBlockPipeXem(raw),
+        bt_max_blocksize=64,
+        usb_speed="FULL",
+        device_interface="USB 2",
+    )
+
+    result = ops.read_from_block_pipe_out(0xA0, 8, block_size=2, reverse=True)
+
+    assert result.raw_data == bytearray(raw)
+    assert result.hex_data == "11223344AABBCCDD"
+
+
+@pytest.mark.parametrize(
+    "kwargs,expected",
+    [
+        ({}, "B2A100998877665544332211DDCCBBAA"),
+        ({"endian": "little"}, "B2A100998877665544332211DDCCBBAA"),
+        ({"endian": "big"}, "9900A1B25566778811223344AABBCCDD"),
+    ],
+)
+def test_write_to_block_pipe_in_hex_reverse_reverses_word_order(kwargs, expected):
+    xem = CapturingBlockPipeXem()
+    ops = BlockPipeOperations(xem, bt_max_blocksize=16384)
+
+    ops.write_to_block_pipe_in(
+        0x80, "AABBCCDD11223344556677889900A1B2", reverse=True, **kwargs
+    )
+
+    assert xem.block_pipe_in_calls == [(0x80, 16, bytes.fromhex(expected))]
+
+
+def test_write_to_block_pipe_in_hex_reverse_uses_32_bit_words_for_usb2():
+    xem = CapturingBlockPipeXem()
+    ops = BlockPipeOperations(
+        xem, bt_max_blocksize=64, usb_speed="FULL", device_interface="USB 2"
+    )
+
+    ops.write_to_block_pipe_in(0x80, "AABBCCDD11223344", block_size=2, reverse=True)
+
+    assert xem.block_pipe_in_calls == [(0x80, 2, bytes.fromhex("22114433BBAADDCC"))]
 
 
 def test_block_pipe_explicit_endian_overrides_reorder_str():
@@ -590,6 +735,28 @@ def test_xem_pipe_wrappers_preserve_keyword_reorder_str_false_legacy_order():
     assert result.hex_data == "DDCCBBAA4433221188776655B2A10099"
 
 
+def test_xem_pipe_wrapper_passes_reverse_to_write():
+    pipe_xem = CapturingPipeXem()
+    fpga = EndpointXEM(pipe_ops=PipeOperations(pipe_xem))
+
+    fpga.WriteToPipeIn(0x80, "AABBCCDD11223344556677889900A1B2", reverse=True)
+
+    assert pipe_xem.pipe_in_calls == [
+        (0x80, bytes.fromhex("B2A100998877665544332211DDCCBBAA"))
+    ]
+
+
+def test_xem_pipe_wrapper_passes_reverse_to_read():
+    pipe_xem = CapturingPipeXem(
+        bytes.fromhex("DDCCBBAA4433221188776655B2A10099")
+    )
+    fpga = EndpointXEM(pipe_ops=PipeOperations(pipe_xem))
+
+    result = fpga.ReadFromPipeOut(0xA0, 16, reverse=True)
+
+    assert result.hex_data == "9900A1B25566778811223344AABBCCDD"
+
+
 def test_xem_block_pipe_wrappers_preserve_keyword_reorder_str_false_legacy_order():
     block_xem = CapturingBlockPipeXem(
         bytes.fromhex("DDCCBBAA4433221188776655B2A10099")
@@ -616,6 +783,34 @@ def test_xem_block_pipe_wrappers_preserve_keyword_reorder_str_false_legacy_order
     ]
     assert result is not None
     assert result.hex_data == "DDCCBBAA4433221188776655B2A10099"
+
+
+def test_xem_block_pipe_wrapper_passes_reverse_to_write():
+    block_xem = CapturingBlockPipeXem()
+    fpga = EndpointXEM(
+        block_pipe_ops=BlockPipeOperations(block_xem, bt_max_blocksize=16384)
+    )
+
+    fpga.WriteToBlockPipeIn(
+        0x80, "AABBCCDD11223344556677889900A1B2", reverse=True
+    )
+
+    assert block_xem.block_pipe_in_calls == [
+        (0x80, 16, bytes.fromhex("B2A100998877665544332211DDCCBBAA"))
+    ]
+
+
+def test_xem_block_pipe_wrapper_passes_reverse_to_read():
+    block_xem = CapturingBlockPipeXem(
+        bytes.fromhex("DDCCBBAA4433221188776655B2A10099")
+    )
+    fpga = EndpointXEM(
+        block_pipe_ops=BlockPipeOperations(block_xem, bt_max_blocksize=16384)
+    )
+
+    result = fpga.ReadFromBlockPipeOut(0xA0, 16, reverse=True)
+
+    assert result.hex_data == "9900A1B25566778811223344AABBCCDD"
 
 
 @pytest.mark.parametrize(
@@ -676,6 +871,78 @@ def test_write_to_pipe_in_numpy_non_integer_arrays_keep_raw_bytes():
     ops.write_to_pipe_in(0x80, samples, endian="big")
 
     assert xem.pipe_in_calls == [(0x80, np.ascontiguousarray(samples).tobytes())]
+
+
+@pytest.mark.parametrize("endian", ["little", "big"])
+def test_write_to_pipe_in_numpy_integer_reverse_reverses_elements(endian):
+    xem = CapturingPipeXem()
+    ops = PipeOperations(xem)
+    samples = np.array([0x1122, 0x3344, 0x5566, 0x7788] * 2, dtype=np.uint16)
+    expected = b"".join(
+        int(value).to_bytes(samples.dtype.itemsize, endian, signed=False)
+        for value in samples[::-1]
+    )
+
+    ops.write_to_pipe_in(0x80, samples, endian=endian, reverse=True)
+
+    assert xem.pipe_in_calls == [(0x80, expected)]
+
+
+@pytest.mark.parametrize("endian", ["little", "big"])
+def test_write_to_block_pipe_in_numpy_integer_reverse_reverses_elements(endian):
+    xem = CapturingBlockPipeXem()
+    ops = BlockPipeOperations(xem, bt_max_blocksize=16384)
+    samples = np.array([0x11223344, 0x55667788, 0x9900A1B2, 0xCCDDEEFF], dtype=np.uint32)
+    expected = b"".join(
+        int(value).to_bytes(samples.dtype.itemsize, endian, signed=False)
+        for value in samples[::-1]
+    )
+
+    ops.write_to_block_pipe_in(0x80, samples, endian=endian, reverse=True)
+
+    assert xem.block_pipe_in_calls == [(0x80, 16, expected)]
+
+
+def test_write_to_pipe_in_numpy_non_integer_reverse_reverses_elements_only():
+    xem = CapturingPipeXem()
+    ops = PipeOperations(xem)
+    samples = np.array([[1.5, 2.5], [3.5, 4.5]], dtype=np.float64)
+    expected = np.ascontiguousarray(np.ravel(samples, order="C")[::-1]).tobytes()
+
+    ops.write_to_pipe_in(0x80, samples, endian="big", reverse=True)
+
+    assert xem.pipe_in_calls == [(0x80, expected)]
+
+
+def test_write_to_block_pipe_in_numpy_non_integer_reverse_reverses_elements_only():
+    xem = CapturingBlockPipeXem()
+    ops = BlockPipeOperations(xem, bt_max_blocksize=16384)
+    samples = np.array([1.5, 2.5], dtype=np.float64)
+    expected = np.ascontiguousarray(samples[::-1]).tobytes()
+
+    ops.write_to_block_pipe_in(0x80, samples, endian="big", reverse=True)
+
+    assert xem.block_pipe_in_calls == [(0x80, 16, expected)]
+
+
+def test_write_to_pipe_in_bytearray_reverse_leaves_buffer_unchanged():
+    xem = CapturingPipeXem()
+    ops = PipeOperations(xem)
+    data = bytearray.fromhex("00112233445566778899AABBCCDDEEFF")
+
+    ops.write_to_pipe_in(0x80, data, reverse=True)
+
+    assert xem.pipe_in_calls == [(0x80, bytes(data))]
+
+
+def test_write_to_block_pipe_in_bytearray_reverse_leaves_buffer_unchanged():
+    xem = CapturingBlockPipeXem()
+    ops = BlockPipeOperations(xem, bt_max_blocksize=16384)
+    data = bytearray.fromhex("00112233445566778899AABBCCDDEEFF")
+
+    ops.write_to_block_pipe_in(0x80, data, reverse=True)
+
+    assert xem.block_pipe_in_calls == [(0x80, 16, bytes(data))]
 
 
 def test_pipe_operations_reject_invalid_endian():

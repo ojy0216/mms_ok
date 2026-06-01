@@ -54,6 +54,22 @@ def bytes_to_hex_words(
     )
 
 
+def reverse_hex_32bit_words(hex_str: str) -> str:
+    word_hex_width = 8
+    if len(hex_str) % word_hex_width != 0:
+        message = (
+            f"Hexadecimal string length must be a multiple of {word_hex_width}!"
+        )
+        log_error(message)
+        raise ValueError(message)
+
+    words = [
+        hex_str[i : i + word_hex_width]
+        for i in range(0, len(hex_str), word_hex_width)
+    ]
+    return "".join(reversed(words))
+
+
 class PipeOutData:
     """
     Represents data received from a pipe out interface.
@@ -78,6 +94,7 @@ class PipeOutData:
         reorder_str: Optional[bool] = None,
         word_byte_width: int = 4,
         endian: Any = _ENDIAN_OMITTED,
+        reverse: bool = False,
     ) -> None:
         """
         Initialize a PipeOutData object.
@@ -88,6 +105,7 @@ class PipeOutData:
             reorder_str (bool): Deprecated; use endian instead.
             word_byte_width (int): Number of bytes in each word used for hex formatting.
             endian (str): Byte order used for formatted hex word data.
+            reverse (bool): If True, format hex_data from latest 32-bit word first.
         """
         if endian is _ENDIAN_OMITTED:
             endian = "little"
@@ -99,7 +117,10 @@ class PipeOutData:
         validate_endian(endian)
         self.__error_code = error_code
         self.__raw_data = raw_data
-        self.__hex_data = bytes_to_hex_words(raw_data, word_byte_width, endian)
+        hex_data = bytes_to_hex_words(raw_data, word_byte_width, endian)
+        if reverse:
+            hex_data = reverse_hex_32bit_words(hex_data)
+        self.__hex_data = hex_data
 
     @property
     def error_code(self) -> int:
