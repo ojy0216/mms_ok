@@ -29,6 +29,19 @@ def capture_warning_messages(call):
     return messages
 
 
+def capture_debug_messages(call):
+    messages = []
+    sink_id = logger.add(
+        lambda message: messages.append(message.record["message"]),
+        level="DEBUG",
+    )
+    try:
+        call()
+    finally:
+        logger.remove(sink_id)
+    return messages
+
+
 class CapturingPipeXem:
     def __init__(self, read_data: Optional[bytes] = None) -> None:
         self.pipe_in_calls = []
@@ -96,6 +109,15 @@ def test_pipe_methods_keep_endian_before_reorder_str(owner, method_name):
     assert parameters.index("endian") + 1 == parameters.index("reorder_str")
     assert parameters.index("reorder_str") + 1 == parameters.index("reverse")
     assert signature.parameters["reverse"].kind is inspect.Parameter.KEYWORD_ONLY
+    if method_name in {
+        "write_to_pipe_in",
+        "write_to_block_pipe_in",
+        "WriteToPipeIn",
+        "WriteToBlockPipeIn",
+    }:
+        assert parameters.index("reverse") + 1 == parameters.index("verbose")
+        assert signature.parameters["verbose"].kind is inspect.Parameter.KEYWORD_ONLY
+        assert signature.parameters["verbose"].default is False
 
 
 def test_write_to_pipe_in_hex_defaults_to_little_endian_words():
@@ -179,6 +201,47 @@ def test_write_to_pipe_in_hex_reverse_reverses_word_order(kwargs, expected):
     )
 
     assert xem.pipe_in_calls == [(0x80, bytes.fromhex(expected))]
+
+
+def test_write_to_pipe_in_verbose_logs_payload_per_pipe_cycle():
+    expected = "DDCCBBAA4433221188776655B2A10099"
+    xem = CapturingPipeXem()
+    ops = PipeOperations(xem)
+
+    messages = capture_debug_messages(
+        lambda: ops.write_to_pipe_in(
+            0x80,
+            "AABBCCDD11223344556677889900A1B2",
+            verbose=True,
+        )
+    )
+
+    assert xem.pipe_in_calls == [(0x80, bytes.fromhex(expected))]
+    assert any("WriteToPipeIn" in message for message in messages)
+    assert any("0x80" in message for message in messages)
+    assert any("32-bit/cycle" in message for message in messages)
+    assert not any(expected in message for message in messages)
+    for cycle, payload in enumerate(["AABBCCDD", "11223344", "55667788", "9900A1B2"]):
+        assert any(
+            f"cycle {cycle}" in message and f"FPGA 32-bit payload: {payload}" in message
+            for message in messages
+        )
+
+
+def test_write_to_pipe_in_verbose_false_does_not_log_payload():
+    expected = "DDCCBBAA4433221188776655B2A10099"
+    xem = CapturingPipeXem()
+    ops = PipeOperations(xem)
+
+    messages = capture_debug_messages(
+        lambda: ops.write_to_pipe_in(
+            0x80,
+            "AABBCCDD11223344556677889900A1B2",
+        )
+    )
+
+    assert xem.pipe_in_calls == [(0x80, bytes.fromhex(expected))]
+    assert not any(expected in message for message in messages)
 
 
 @pytest.mark.parametrize(
@@ -624,6 +687,59 @@ def test_write_to_block_pipe_in_hex_reverse_reverses_word_order(kwargs, expected
     assert xem.block_pipe_in_calls == [(0x80, 16, bytes.fromhex(expected))]
 
 
+def test_write_to_block_pipe_in_verbose_logs_usb3_payload_per_pipe_cycle_and_block_size():
+    expected = "B2A100998877665544332211DDCCBBAA"
+    xem = CapturingBlockPipeXem()
+    ops = BlockPipeOperations(xem, bt_max_blocksize=16384)
+
+    messages = capture_debug_messages(
+        lambda: ops.write_to_block_pipe_in(
+            0x80,
+            "AABBCCDD11223344556677889900A1B2",
+            reverse=True,
+            verbose=True,
+        )
+    )
+
+    assert xem.block_pipe_in_calls == [(0x80, 16, bytes.fromhex(expected))]
+    assert any("WriteToBlockPipeIn" in message for message in messages)
+    assert any("0x80" in message for message in messages)
+    assert any("block_size=16" in message for message in messages)
+    assert any("32-bit/cycle" in message for message in messages)
+    assert not any(expected in message for message in messages)
+    for cycle, payload in enumerate(["9900A1B2", "55667788", "11223344", "AABBCCDD"]):
+        assert any(
+            f"cycle {cycle}" in message and f"FPGA 32-bit payload: {payload}" in message
+            for message in messages
+        )
+
+
+def test_write_to_block_pipe_in_verbose_logs_usb2_payload_per_pipe_cycle():
+    expected = "BBAADDCC"
+    xem = CapturingBlockPipeXem()
+    ops = BlockPipeOperations(
+        xem, bt_max_blocksize=64, usb_speed="FULL", device_interface="USB 2"
+    )
+
+    messages = capture_debug_messages(
+        lambda: ops.write_to_block_pipe_in(
+            0x80,
+            "AABBCCDD",
+            block_size=2,
+            verbose=True,
+        )
+    )
+
+    assert xem.block_pipe_in_calls == [(0x80, 2, bytes.fromhex(expected))]
+    assert any("16-bit/cycle" in message for message in messages)
+    assert not any(expected in message for message in messages)
+    for cycle, payload in enumerate(["AABB", "CCDD"]):
+        assert any(
+            f"cycle {cycle}" in message and f"FPGA 16-bit payload: {payload}" in message
+            for message in messages
+        )
+
+
 def test_write_to_block_pipe_in_hex_reverse_uses_32_bit_words_for_usb2():
     xem = CapturingBlockPipeXem()
     ops = BlockPipeOperations(
@@ -746,6 +862,30 @@ def test_xem_pipe_wrapper_passes_reverse_to_write():
     ]
 
 
+def test_xem_pipe_wrapper_passes_verbose_to_write():
+    expected = "DDCCBBAA4433221188776655B2A10099"
+    pipe_xem = CapturingPipeXem()
+    fpga = EndpointXEM(pipe_ops=PipeOperations(pipe_xem))
+
+    messages = capture_debug_messages(
+        lambda: fpga.WriteToPipeIn(
+            0x80,
+            "AABBCCDD11223344556677889900A1B2",
+            verbose=True,
+        )
+    )
+
+    assert pipe_xem.pipe_in_calls == [(0x80, bytes.fromhex(expected))]
+    assert not any(expected in message for message in messages)
+    assert any("WriteToPipeIn" in message for message in messages)
+    assert any("32-bit/cycle" in message for message in messages)
+    for cycle, payload in enumerate(["AABBCCDD", "11223344", "55667788", "9900A1B2"]):
+        assert any(
+            f"cycle {cycle}" in message and f"FPGA 32-bit payload: {payload}" in message
+            for message in messages
+        )
+
+
 def test_xem_pipe_wrapper_passes_reverse_to_read():
     pipe_xem = CapturingPipeXem(
         bytes.fromhex("DDCCBBAA4433221188776655B2A10099")
@@ -798,6 +938,35 @@ def test_xem_block_pipe_wrapper_passes_reverse_to_write():
     assert block_xem.block_pipe_in_calls == [
         (0x80, 16, bytes.fromhex("B2A100998877665544332211DDCCBBAA"))
     ]
+
+
+def test_xem_block_pipe_wrapper_passes_verbose_to_write():
+    expected = "DDCCBBAA4433221188776655B2A10099"
+    block_xem = CapturingBlockPipeXem()
+    fpga = EndpointXEM(
+        block_pipe_ops=BlockPipeOperations(block_xem, bt_max_blocksize=16384)
+    )
+
+    messages = capture_debug_messages(
+        lambda: fpga.WriteToBlockPipeIn(
+            0x80,
+            "AABBCCDD11223344556677889900A1B2",
+            verbose=True,
+        )
+    )
+
+    assert block_xem.block_pipe_in_calls == [(0x80, 16, bytes.fromhex(expected))]
+    assert not any(expected in message for message in messages)
+    assert any(
+        "WriteToBlockPipeIn" in message and "block_size=16" in message
+        for message in messages
+    )
+    assert any("32-bit/cycle" in message for message in messages)
+    for cycle, payload in enumerate(["AABBCCDD", "11223344", "55667788", "9900A1B2"]):
+        assert any(
+            f"cycle {cycle}" in message and f"FPGA 32-bit payload: {payload}" in message
+            for message in messages
+        )
 
 
 def test_xem_block_pipe_wrapper_passes_reverse_to_read():

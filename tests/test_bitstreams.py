@@ -160,6 +160,15 @@ def test_bist_resolver_prefers_packaged_bitstream(monkeypatch, tmp_path):
     )
 
 
+def test_bist_bitstreams_remain_verified_board_only():
+    assert set(bist.BIST_BITSTREAMS) == {
+        "XEM7310-A75",
+        "XEM7310-A200",
+        "XEM7360-K160T",
+    }
+    assert not any("unknown" in key.lower() for key in bist.BIST_BITSTREAMS)
+
+
 def test_bist_resolver_falls_back_to_legacy_bitstream(monkeypatch, tmp_path):
     package_dir = tmp_path / "package"
     legacy_dir = tmp_path / "legacy"

@@ -12,6 +12,9 @@ The package is intended for researchers and lab users who already have Opal Kell
 - `XEM7360` (`XEM7360K160T`)
 
 The package also includes BIST bitstreams under `mms_ok/bitstreams` for supported board-test flows.
+`XEM(...)` can open other attached Opal Kelly boards for best-effort common
+FrontPanel API access, but unknown boards are not hardware-verified by `mms_ok`
+and do not get board-specific LED behavior or BIST support.
 
 ## What it provides
 
@@ -31,7 +34,8 @@ The package also includes BIST bitstreams under `mms_ok/bitstreams` for supporte
   - `mms_ok` supports Windows environments only.
   - **macOS and Linux are not supported.**
 - Python 3.7 or newer.
-- An Opal Kelly board supported by this package.
+- An Opal Kelly board. XEM7310/XEM7360 boards are hardware-verified by this
+  package; other Opal Kelly boards are best-effort for common FrontPanel APIs.
 - The Opal Kelly FrontPanel SDK for Windows. FrontPanel SDK `5.3.6` is recommended.
 - Python dependencies installed by `pip`: `numpy`, `bitslice`, `loguru`, `rich`, and `tqdm`.
 
@@ -82,7 +86,7 @@ mms_ok setup-frontpanel
 mms_ok check-sdk
 ```
 
-## Device discovery
+## Device discovery and autodetect
 
 List attached FrontPanel devices from the CLI:
 
@@ -106,6 +110,49 @@ for device in mms_ok.list_devices():
 `mms_ok.list_devices()` imports the FrontPanel SDK lazily, so `import mms_ok`
 does not require the SDK to be installed.
 
+Use `XEM(...)` when you want `mms_ok` to choose the concrete FPGA class
+from the connected board:
+
+```python
+from mms_ok import XEM
+
+with XEM("path/to/design.bit") as fpga:
+    print(type(fpga).__name__)
+```
+
+Autodetect behavior:
+
+- Exactly one attached XEM7310-A75/A200 opens as `XEM7310`.
+- Exactly one attached XEM7360-K160T opens as `XEM7360`.
+- Other Opal Kelly product IDs open as a generic unverified device for
+  best-effort common FrontPanel APIs.
+- Zero attached devices raises `FPGASelectionError`.
+- More than one attached device requires `serial=...` and raises
+  `FPGASelectionError` if omitted.
+- A provided `serial` must match a discovered device, otherwise
+  `FPGASelectionError` is raised.
+- If the selected device changes serial or exact product ID between discovery
+  and the constructor reopen, `ProductIDMismatchError` is raised before
+  `ConfigureFPGA` is called.
+
+`XEM` is public at the top level:
+
+```python
+from mms_ok import XEM
+```
+
+Advanced users can import facade details and the shared base class from
+`mms_ok.fpga`. For legacy compatibility, `mms_ok.fpga.XEM` remains the base
+class; the facade exposes the autodetect factory as `autodetect_xem`.
+
+```python
+from mms_ok.fpga import FPGASelectionError, ProductIDMismatchError, UnverifiedXEM, XEM, XEMBase, autodetect_xem
+```
+
+`UnverifiedXEM` is facade-visible for introspection and tests, but it is not a
+top-level public constructor promise. Prefer top-level `mms_ok.XEM(...)` for
+normal autodetect usage.
+
 ## Built-in self-test (BIST)
 
 BIST is the quickest way to confirm that the installed package, FrontPanel SDK, connected board, and packaged board-test bitstream can work together.
@@ -126,10 +173,11 @@ The package first looks for its packaged BIST bitstreams. For backward compatibi
 
 ## Bitstream paths
 
-`XEM7310(bitstream_path)` and `XEM7360(bitstream_path)` accept absolute paths,
-such as `C:\path\to\design.bit`. `~` and environment variables are expanded.
-When only a bitstream filename such as `design.bit` is provided, it is loaded
-from `../bitstreams` relative to the current working directory.
+`XEM(bitstream_path)`, `XEM7310(bitstream_path)`, and
+`XEM7360(bitstream_path)` accept absolute paths, such as
+`C:\path\to\design.bit`. `~` and environment variables are expanded. When only
+a bitstream filename such as `design.bit` is provided, it is loaded from
+`../bitstreams` relative to the current working directory.
 
 Examples:
 
@@ -159,9 +207,9 @@ A typical session is:
 
 1. Install the Windows FrontPanel SDK with the setup guide above.
 2. Install `mms_ok` and verify that it can import the FrontPanel SDK with `mms_ok check-sdk`.
-3. Connect a supported XEM board and verify visibility with `mms_ok devices`.
+3. Connect an Opal Kelly board and verify visibility with `mms_ok devices`.
 4. When appropriate, verify the board with `mms_ok bist`.
-5. Load your `.bit` file with `XEM7310` or `XEM7360`.
+5. Load your `.bit` file with `XEM`, `XEM7310`, or `XEM7360`.
 6. Use wires, triggers, pipes, and registers to control and inspect your FPGA design.
 7. Close the device when finished. Prefer a context manager in scripts.
 
@@ -170,16 +218,20 @@ A typical session is:
 Use this pattern for normal Python scripts so the device is closed automatically:
 
 ```python
-from mms_ok import XEM7310
+from mms_ok import XEM
 
 BITSTREAM = "path/to/design.bit"
 
-with XEM7310(BITSTREAM) as fpga:
+with XEM(BITSTREAM) as fpga:
     # Optional: reset the design through a wire endpoint.
     fpga.reset(reset_address=0x00, reset_time=1.0, active_low=True)
 
-    # Control board LEDs. XEM7310 exposes 8 LEDs; XEM7360 exposes 4 LEDs.
-    fpga.SetLED(0xFF)
+    # Optional board-specific LED control. Generic unverified boards raise
+    # NotImplementedError because their LED wiring is not hardware-validated.
+    try:
+        fpga.SetLED(0xFF)
+    except NotImplementedError:
+        pass
 
     # Write control words through wire-in endpoints.
     fpga.SetWireInValue(0x00, 0x12345678)
@@ -195,6 +247,50 @@ with XEM7310(BITSTREAM) as fpga:
     # Wait for a trigger-out completion flag.
     fpga.CheckTriggered(0x60, 0x01, timeout=2.0)
 ```
+
+`XEM(...)` autodetects the single attached FrontPanel device and returns
+`XEM7310`, `XEM7360`, or a generic unverified device for other Opal Kelly
+product IDs. If more than one device is attached, pass a serial number from
+`mms_ok devices` or `mms_ok.list_devices()`:
+
+```python
+from mms_ok import XEM
+
+with XEM("path/to/design.bit", serial="SERIAL123") as fpga:
+    fpga.SetWireInValue(0x00, 0x00000001)
+```
+
+The board-specific constructors also accept `serial` as a keyword-only argument
+when you want to require a verified board family and target a specific device:
+
+```python
+from mms_ok import XEM7310
+
+with XEM7310("path/to/design.bit", serial="SERIAL123") as fpga:
+    fpga.SetLED(0xFF)
+```
+
+Passing the serial positionally is intentionally not supported; use
+`serial="..."`.
+
+You can still use strict verified constructors directly when you want to require
+a specific board family. These constructors reject the wrong connected product
+before configuring the FPGA:
+
+```python
+from mms_ok import XEM7310, XEM7360
+
+with XEM7310("path/to/design.bit") as fpga:
+    fpga.SetLED(0xFF)
+
+with XEM7360("path/to/design.bit") as fpga:
+    fpga.SetLED(0x0F)
+```
+
+Generic unverified boards returned by `XEM(...)` emit a runtime warning.
+They inherit common wires, triggers, pipes, block pipes, registers, reset, and
+lifecycle methods, but board-specific helpers such as `SetLED(...)` are not
+supported and BIST remains limited to the verified boards listed above.
 
 ### Notebook or interactive usage
 
@@ -288,6 +384,35 @@ For write calls, each supported input type is prepared differently:
 | `bytearray` | Sent exactly as provided. `endian` and `reverse` do not rewrite raw byte buffers. |
 | NumPy integer array | Flattened in C order, then each element is encoded using `endian`, independent of the array dtype byte order. |
 | NumPy non-integer array | Flattened in C order and sent as contiguous raw bytes. |
+
+#### Verbose pipe-in logging
+
+Pass `verbose=True` to pipe-in write helpers when you need to inspect the exact
+FPGA-cycle payload sent to the endpoint. The verbose log prints the prepared
+payload as uppercase hexadecimal chunks after `endian` and `reverse` have been
+applied, so it is useful for matching software writes against HDL waveforms.
+
+```python
+payload = "AABBCCDD11223344556677889900A1B2"
+
+# Logs four 32-bit FPGA payload cycles for a normal pipe-in transfer.
+fpga.WriteToPipeIn(0x80, payload, verbose=True)
+```
+
+For normal `WriteToPipeIn` calls, verbose logging uses 32-bit cycle chunks.
+`WriteToBlockPipeIn` supports the same option and also includes the selected
+`block_size` in the summary log. Block pipe verbose chunks follow the transport
+formatting policy: USB 2 block pipes log 16-bit FPGA payload cycles, while USB
+3, PCIe, and the default policy log 32-bit cycles.
+
+```python
+# Logs the selected block_size plus per-cycle FPGA payload chunks.
+fpga.WriteToBlockPipeIn(0x80, payload, block_size=16, verbose=True)
+```
+
+`verbose=True` only adds debug logging; it does not change the bytes sent or the
+return value. The device-wide `set_verbose_level(...)` option remains separate
+and logs high-level method summaries such as the byte count written.
 
 #### `endian` and `reverse`
 
@@ -393,14 +518,24 @@ FrontPanel endpoint ranges used by the helpers follow the standard Opal Kelly la
 Import the public classes from `mms_ok`:
 
 ```python
-from mms_ok import BIST, XEM7310, XEM7360, list_devices
+from mms_ok import BIST, XEM, XEM7310, XEM7360, list_devices
 ```
 
-Common methods on `XEM7310` and `XEM7360` include:
+Facade-only FPGA helpers and the shared base class are available from
+`mms_ok.fpga`. For compatibility, `mms_ok.fpga.XEM` is the shared base class;
+use top-level `mms_ok.XEM(...)` or facade `autodetect_xem(...)` for
+autodetect construction:
 
-- Discovery: `list_devices()`.
+```python
+from mms_ok.fpga import FPGASelectionError, ProductIDMismatchError, UnverifiedXEM, XEM, XEMBase, autodetect_xem
+```
+
+Common methods on `XEM7310`, `XEM7360`, and generic devices returned by
+`XEM(...)` include:
+
+- Discovery: `list_devices()`, `XEM(...)`.
 - Device lifecycle: `close()`, context manager support, `reset(...)`.
-- LEDs: `SetLED(...)`.
+- LEDs: `SetLED(...)` on verified XEM7310/XEM7360 only.
 - Wires: `SetWireInValue(...)`, `UpdateWireIns()`, `UpdateWireOuts()`, `GetWireOutValue(...)`.
 - Triggers: `ActivateTriggerIn(...)`, `UpdateTriggerOuts()`, `IsTriggered(...)`, `CheckTriggered(...)`.
 - Pipes: `WriteToPipeIn(...)`, `ReadFromPipeOut(...)`, `WriteToBlockPipeIn(...)`, `ReadFromBlockPipeOut(...)`.

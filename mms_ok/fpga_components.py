@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Optional, Union
 
 import numpy as np
+from loguru import logger
 
 from .address import (
     BLOCK_PIPE_IN_END,
@@ -60,6 +61,49 @@ def _format_hex_for_bit_width(value: int, bit_width: int) -> str:
     separator_count = (hex_digits - 1) // 4
     display_width = hex_digits + separator_count
     return f"0x{value:0{display_width}_X}"
+
+
+def _iter_payload_cycles(payload: bytearray, cycle_byte_width: int):
+    if cycle_byte_width <= 0:
+        raise ValueError("cycle_byte_width must be positive")
+    for cycle, offset in enumerate(range(0, len(payload), cycle_byte_width)):
+        yield cycle, offset, payload[offset : offset + cycle_byte_width]
+
+
+def _log_pipe_in_payload_cycles(
+    operation: str,
+    ep_addr: int,
+    payload: bytearray,
+    cycle_byte_width: int,
+    endian: str,
+    *,
+    block_size: Optional[int] = None,
+) -> None:
+    width_bits = cycle_byte_width * 8
+    block_text = "" if block_size is None else f" | block_size={block_size}"
+    cycle_count = (len(payload) + cycle_byte_width - 1) // cycle_byte_width
+    logger.debug(
+        "{} >> Addr {}{} | FPGA payload: {} bytes, {}-bit/cycle, {} cycles",
+        operation,
+        hex(ep_addr),
+        block_text,
+        len(payload),
+        width_bits,
+        cycle_count,
+    )
+    for cycle, offset, chunk in _iter_payload_cycles(payload, cycle_byte_width):
+        fpga_payload = int.from_bytes(chunk, byteorder=endian)
+        logger.debug(
+            "{} >> Addr {} | cycle {} | byte[{}:{}] | FPGA {}-bit payload: {:0{}X}",
+            operation,
+            hex(ep_addr),
+            cycle,
+            offset,
+            offset + len(chunk),
+            width_bits,
+            fpga_payload,
+            len(chunk) * 2,
+        )
 
 
 def _check_error_code(error_code: int, operation: str, failure_message: str) -> int:
@@ -438,6 +482,7 @@ class PipeOperations:
         reorder_str: Optional[bool] = None,
         *,
         reverse: bool = False,
+        verbose: bool = False,
     ) -> int:
         """
         Write data to a pipe-in endpoint.
@@ -448,6 +493,7 @@ class PipeOperations:
             endian (str): Byte order used for string and integer numpy array data
             reorder_str (bool): Deprecated; use endian instead
             reverse (bool): If True, transfer supported inputs from latest element/word first
+            verbose (bool): If True, log payload as per-cycle uppercase hex chunks
 
         Returns:
             int: Error code (0 on success)
@@ -461,9 +507,18 @@ class PipeOperations:
         prepared_data = self._prepare_data(data, endian, reverse=reverse)
 
         error_code = self.xem.WriteToPipeIn(ep_addr, prepared_data)
-        return _check_error_code(
+        result = _check_error_code(
             error_code, "WriteToPipeIn", "Failed to write to pipe-in"
         )
+        if verbose:
+            _log_pipe_in_payload_cycles(
+                "WriteToPipeIn",
+                ep_addr,
+                prepared_data,
+                4,
+                endian,
+            )
+        return result
 
     def read_from_pipe_out(
         self,
@@ -581,6 +636,7 @@ class BlockPipeOperations:
         reorder_str: Optional[bool] = None,
         *,
         reverse: bool = False,
+        verbose: bool = False,
     ) -> int:
         """
         Write data to a block pipe-in endpoint.
@@ -592,6 +648,7 @@ class BlockPipeOperations:
             endian (str): Byte order used for string and integer numpy array data
             reorder_str (bool): Deprecated; use endian instead
             reverse (bool): If True, transfer supported inputs from latest element/word first
+            verbose (bool): If True, log payload as per-cycle uppercase hex chunks
 
         Returns:
             int: Error code (0 on success)
@@ -610,9 +667,19 @@ class BlockPipeOperations:
             self._transport_policy.validate_block_size(block_size, len(prepared_data))
 
         error_code = self.xem.WriteToBlockPipeIn(ep_addr, block_size, prepared_data)
-        return _check_error_code(
+        result = _check_error_code(
             error_code, "WriteToBlockPipeIn", "Failed to write to block pipe-in"
         )
+        if verbose:
+            _log_pipe_in_payload_cycles(
+                "WriteToBlockPipeIn",
+                ep_addr,
+                prepared_data,
+                self._word_byte_width(),
+                endian,
+                block_size=block_size,
+            )
+        return result
 
     def read_from_block_pipe_out(
         self,

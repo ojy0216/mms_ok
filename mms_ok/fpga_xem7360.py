@@ -5,6 +5,7 @@ from loguru import logger
 
 from .diagnostics import log_critical
 from .fpga_base import XEM
+from .fpga_products import xem7360_product_ids
 from .ok_setup import get_ok
 from .validation import validate_address, validate_wire_value
 
@@ -23,7 +24,9 @@ class XEM7360(XEM):
         >>> fpga = XEM7360("bitstream.bit")
     """
 
-    def __init__(self, bitstream_path: str) -> None:
+    def __init__(
+        self, bitstream_path: str, *, serial=None, _expected_product_id=None
+    ) -> None:
         """
         Initialize XEM7360 FPGA device.
 
@@ -34,14 +37,14 @@ class XEM7360(XEM):
             TypeError: If connected device is not a XEM7360K160T
             Plus all exceptions from parent class __init__
         """
-        super().__init__(bitstream_path=bitstream_path)
+        super().__init__(
+            bitstream_path=bitstream_path,
+            serial=serial,
+            _expected_product_id=_expected_product_id,
+        )
 
     def _validate_connected_board(self) -> None:
-        ok = get_ok()
-
-        target_product_id = ok.okCFrontPanel.brdXEM7360K160T
-
-        if self.config.product_id != target_product_id:
+        if int(self.config.product_id) not in xem7360_product_ids():
             log_critical("Connected FPGA board is not a XEM7360K160T!")
             raise TypeError("Connected FPGA board is not a XEM7360K160T!")
 

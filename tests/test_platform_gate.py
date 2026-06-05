@@ -80,12 +80,13 @@ def test_metadata_lookup_does_not_import_or_gate_package() -> None:
 def test_windows_simulated_public_api_and_cli_parser_import() -> None:
     result = _run_python(
         "import os\n"
+        "import numpy  # preload before Linux-host os.name Windows simulation\n"
         "from loguru import logger as _logger\n"
         "original = os.name\n"
         "os.name = 'nt'\n"
         "try:\n"
         "    import mms_ok\n"
-        "    expected = {'BIST', 'XEM7310', 'XEM7360', 'list_devices', "
+        "    expected = {'BIST', 'XEM', 'XEM7310', 'XEM7360', 'list_devices', "
         "'copy_frontpanel_files', 'setup_frontpanel', '__version__'}\n"
         "    missing = expected.difference(dir(mms_ok))\n"
         "    import mms_ok.cli as cli\n"
@@ -103,6 +104,7 @@ def test_windows_simulated_import_does_not_require_colorama() -> None:
     result = _run_python(
         "import os\n"
         "import sys\n"
+        "import numpy  # preload before Linux-host os.name Windows simulation\n"
         "from loguru import logger as _logger\n"
         "\n"
         "class BlockColorama:\n"
@@ -128,20 +130,55 @@ def test_windows_simulated_import_does_not_require_colorama() -> None:
 def test_windows_simulated_fpga_facade_import_identities() -> None:
     result = _run_python(
         "import os\n"
+        "import numpy  # preload before Linux-host os.name Windows simulation\n"
         "from loguru import logger as _logger\n"
         "original = os.name\n"
         "os.name = 'nt'\n"
         "try:\n"
         "    import mms_ok\n"
         "    from mms_ok import fpga\n"
-        "    from mms_ok.fpga_base import XEM\n"
+        "    from mms_ok.fpga_base import XEM as XEMBase\n"
+        "    from mms_ok.fpga_factory import XEM as autodetect_xem\n"
         "    from mms_ok.fpga_xem7310 import XEM7310\n"
         "    from mms_ok.fpga_xem7360 import XEM7360\n"
-        "    assert fpga.XEM is XEM\n"
+        "    assert fpga.XEM is XEMBase\n"
+        "    assert fpga.XEMBase is XEMBase\n"
+        "    assert fpga.autodetect_xem is autodetect_xem\n"
         "    assert fpga.XEM7310 is XEM7310\n"
         "    assert fpga.XEM7360 is XEM7360\n"
         "    assert mms_ok.XEM7310 is XEM7310\n"
         "    assert mms_ok.XEM7360 is XEM7360\n"
+        "    assert mms_ok.XEM is autodetect_xem\n"
+        "finally:\n"
+        "    os.name = original\n"
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_windows_simulated_XEM_import_is_sdk_lazy() -> None:
+    result = _run_python(
+        "import os\n"
+        "import sys\n"
+        "import numpy  # preload before Linux-host os.name Windows simulation\n"
+        "from loguru import logger as _logger\n"
+        "\n"
+        "class BlockFrontPanel:\n"
+        "    def find_spec(self, fullname, path=None, target=None):\n"
+        "        if fullname in {'ok', '_ok'}:\n"
+        "            raise ModuleNotFoundError(fullname)\n"
+        "        return None\n"
+        "\n"
+        "sys.modules.pop('ok', None)\n"
+        "sys.modules.pop('_ok', None)\n"
+        "sys.meta_path.insert(0, BlockFrontPanel())\n"
+        "original = os.name\n"
+        "os.name = 'nt'\n"
+        "try:\n"
+        "    import mms_ok\n"
+        "    from mms_ok import fpga, XEM\n"
+        "    from mms_ok.fpga_base import XEM as XEMBase\n"
+        "    assert fpga.XEM is XEMBase\n"
         "finally:\n"
         "    os.name = original\n"
     )
