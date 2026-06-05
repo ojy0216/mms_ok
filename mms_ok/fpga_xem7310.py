@@ -5,7 +5,7 @@ from loguru import logger
 
 from .diagnostics import log_critical
 from .fpga_base import XEM
-from .ok_setup import get_ok
+from .fpga_products import xem7310_product_ids
 from .validation import validate_address, validate_wire_value
 
 
@@ -23,7 +23,9 @@ class XEM7310(XEM):
         >>> fpga = XEM7310("bitstream.bit")
     """
 
-    def __init__(self, bitstream_path: str) -> None:
+    def __init__(
+        self, bitstream_path: str, *, serial=None, _expected_product_id=None
+    ) -> None:
         """
         Initialize XEM7310 FPGA device.
 
@@ -34,17 +36,14 @@ class XEM7310(XEM):
             TypeError: If connected device is not a XEM7310A75/A200
             Plus all exceptions from parent class __init__
         """
-        super().__init__(bitstream_path=bitstream_path)
+        super().__init__(
+            bitstream_path=bitstream_path,
+            serial=serial,
+            _expected_product_id=_expected_product_id,
+        )
 
     def _validate_connected_board(self) -> None:
-        ok = get_ok()
-
-        target_product_id_list = [
-            ok.okCFrontPanel.brdXEM7310A75,
-            ok.okCFrontPanel.brdXEM7310A200,
-        ]
-
-        if self.config.product_id not in target_product_id_list:
+        if int(self.config.product_id) not in xem7310_product_ids():
             log_critical("Connected FPGA board is not a XEM7310A75/A200!")
             raise TypeError("Connected FPGA board is not a XEM7310A75/A200!")
 

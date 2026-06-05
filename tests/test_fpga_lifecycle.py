@@ -9,7 +9,7 @@ from rich.console import Console
 from mms_ok import fpga
 from mms_ok import fpga_base
 from mms_ok import fpga_config
-from mms_ok import fpga_xem7310
+from mms_ok import fpga_products
 from mms_ok import fpga_xem7360
 
 
@@ -99,7 +99,7 @@ class FakeOk:
     okCDeviceSettings = FakeDeviceSettings
 
 
-class LifecycleXEM(fpga.XEM):
+class LifecycleXEM(fpga_base.XEM):
     check_error = None
 
     def _check_device_settings(self) -> None:
@@ -123,6 +123,7 @@ def fake_frontpanel(monkeypatch):
 
     monkeypatch.setattr(fpga_base, "get_ok", lambda: FakeOk)
     monkeypatch.setattr(fpga_config, "get_ok", lambda: FakeOk)
+    monkeypatch.setattr(fpga_products, "get_ok", lambda: FakeOk)
     monkeypatch.setattr(fpga_base, "print_fpga_overview", lambda **kwargs: None)
 
 
@@ -140,7 +141,7 @@ def make_uninitialized_device(handle: FakeFrontPanel) -> LifecycleXEM:
     device._led_used = False
     device._led_address = None
     device._close_finalizer = weakref.finalize(
-        device, fpga.XEM._finalize_xem_handle, handle
+        device, fpga_base.XEM._finalize_xem_handle, handle
     )
     return device
 
@@ -242,13 +243,11 @@ def test_explicit_close_detaches_fallback_finalizer():
     assert handle.close_calls == 1
 
 
-def test_xem7310_constructor_uses_board_module_get_ok(monkeypatch, bitstream_path):
-    monkeypatch.setattr(fpga_xem7310, "get_ok", lambda: FakeOk)
-
+def test_xem7310_constructor_uses_product_id_registry(bitstream_path):
     device = fpga.XEM7310(bitstream_path)
 
     try:
-        assert isinstance(device, fpga.XEM)
+        assert isinstance(device, fpga_base.XEM)
         assert device.config.product_id == FakeFrontPanel.brdXEM7310A75
         assert device.is_open() is True
         assert FakeFrontPanel.instances[0].configure_calls == [bitstream_path]
@@ -264,7 +263,7 @@ def test_xem7360_constructor_uses_board_module_get_ok(monkeypatch, bitstream_pat
     device = fpga.XEM7360(bitstream_path)
 
     try:
-        assert isinstance(device, fpga.XEM)
+        assert isinstance(device, fpga_base.XEM)
         assert device.config.product_id == FakeFrontPanel.brdXEM7360K160T
         assert device._vadj_voltage_dict == {
             "vadj1": 1.2,
@@ -277,10 +276,9 @@ def test_xem7360_constructor_uses_board_module_get_ok(monkeypatch, bitstream_pat
         device.close()
 
 
-def test_xem7310_wrong_board_fails_before_configure(monkeypatch, bitstream_path):
+def test_xem7310_wrong_board_fails_before_configure(bitstream_path):
     FakeFrontPanel.product_name = "XEM7360"
     FakeFrontPanel.product_id = FakeFrontPanel.brdXEM7360K160T
-    monkeypatch.setattr(fpga_xem7310, "get_ok", lambda: FakeOk)
 
     with pytest.raises(TypeError, match="XEM7310A75/A200"):
         fpga.XEM7310(bitstream_path)

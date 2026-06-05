@@ -36,6 +36,10 @@ from .validation import validate_address, validate_wire_value
 _FRONTPANEL_ERROR_CODE_RE = re.compile(r"\bError\s+(-?\d+)\b")
 
 
+class ProductIDMismatchError(RuntimeError):
+    """Raised when a selected device changes identity before configuration."""
+
+
 class XEM(ABC):
     """
     Abstract base class for Opal Kelly FPGA devices.
@@ -58,7 +62,13 @@ class XEM(ABC):
         ...     fpga.reset()        # Reset the device
     """
 
-    def __init__(self, bitstream_path: str) -> None:
+    def __init__(
+        self,
+        bitstream_path: str,
+        *,
+        serial: Optional[str] = None,
+        _expected_product_id: Optional[int] = None,
+    ) -> None:
         """
         Initialize and configure the FPGA device.
 
@@ -78,6 +88,8 @@ class XEM(ABC):
         self._led_address = None
         self._opened = False
         self._close_finalizer = None
+        self._serial = "" if serial is None else str(serial)
+        self._expected_product_id = _expected_product_id
         ok = get_ok()
         self.xem = ok.okCFrontPanel()
         self._close_finalizer = weakref.finalize(
@@ -92,7 +104,9 @@ class XEM(ABC):
             self._validate_bitstream_path()
 
             self._connect()
+            self._validate_expected_product_id_before_configure()
             self._validate_connected_board()
+            self._before_configure()
             self._configure()
 
             self.auto_wire_in = True
@@ -226,9 +240,17 @@ class XEM(ABC):
         """
         ok = get_ok()
 
-        if self.xem.OpenBySerial(""):
-            log_critical("Device is not opened!")
-            raise ConnectionError("Device is not opened!")
+        error_code = self.xem.OpenBySerial(self._serial)
+        if error_code:
+            if self._serial:
+                message = (
+                    "Device with serial {!r} is not opened! "
+                    "(OpenBySerial returned {})".format(self._serial, error_code)
+                )
+            else:
+                message = "Device is not opened!"
+            log_critical(message)
+            raise ConnectionError(message)
         self._opened = True
 
         device_info = ok.okTDeviceInfo()
@@ -237,6 +259,43 @@ class XEM(ABC):
         self.config = FPGAConfig.from_device_info(device_info)
         self.config.validate()
 
+    def _validate_expected_product_id_before_configure(self) -> None:
+        """
+        Verify factory discovery identity after opening the selected serial.
+
+        The autodetect factory discovers a serial/product-id pair, then reopens
+        that serial through the normal constructor lifecycle. This guard makes
+        the reopen safe: serial or exact product-id drift fails before class
+        validation or FPGA configuration can occur.
+        """
+        actual_serial = str(self.config.serial_number)
+        if self._serial and actual_serial != self._serial:
+            message = (
+                "Selected FrontPanel device serial changed before configuration: "
+                "expected serial={!r}, opened serial={!r}, opened product_id={}. "
+                "Retry discovery and pass an explicit serial if needed."
+            ).format(self._serial, actual_serial, self.config.product_id)
+            log_critical(message)
+            raise ProductIDMismatchError(message)
+
+        expected_product_id = self._expected_product_id
+        if expected_product_id is None:
+            return
+
+        actual_product_id = int(self.config.product_id)
+        if actual_product_id != int(expected_product_id):
+            message = (
+                "Selected FrontPanel device changed before configuration: "
+                "serial={!r}, expected product_id={}, opened product_id={}. "
+                "Retry discovery and pass an explicit serial if needed."
+            ).format(
+                self._serial or self.config.serial_number,
+                expected_product_id,
+                actual_product_id,
+            )
+            log_critical(message)
+            raise ProductIDMismatchError(message)
+
     def _validate_connected_board(self) -> None:
         """
         Validate that the connected board matches the concrete device class.
@@ -244,6 +303,10 @@ class XEM(ABC):
         Base devices accept any connected board. Board-specific subclasses can
         override this hook to fail before configuring an incompatible FPGA.
         """
+        pass
+
+    def _before_configure(self) -> None:
+        """Run subclass hooks after board validation but before ConfigureFPGA."""
         pass
 
     def _configure(self) -> None:

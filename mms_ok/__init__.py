@@ -8,16 +8,30 @@ remain lazy after the platform gate passes.
 try:
     from importlib.metadata import PackageNotFoundError, version as _metadata_version
 except ImportError:  # pragma: no cover - Python 3.7 fallback
-    from pkg_resources import DistributionNotFound as PackageNotFoundError
-    from pkg_resources import get_distribution
+    try:
+        from importlib_metadata import (  # type: ignore
+            PackageNotFoundError,
+            version as _metadata_version,
+        )
+    except ImportError:  # pragma: no cover - last-resort legacy fallback
+        try:
+            from pkg_resources import DistributionNotFound as PackageNotFoundError
+            from pkg_resources import get_distribution
 
-    def _metadata_version(package_name: str) -> str:
-        return get_distribution(package_name).version
+            def _metadata_version(package_name: str) -> str:
+                return get_distribution(package_name).version
+
+        except Exception:  # pragma: no cover - minimal import-safe fallback
+            class PackageNotFoundError(Exception):
+                pass
+
+            def _metadata_version(package_name: str) -> str:
+                raise PackageNotFoundError(package_name)
 
 
 try:
     __version__ = _metadata_version("mms_ok")
-except PackageNotFoundError:
+except Exception:
     __version__ = "0+unknown"
 
 import sys
@@ -43,6 +57,7 @@ enforce_windows_runtime(logger.critical)
 
 __all__ = [
     "BIST",
+    "XEM",
     "XEM7310",
     "XEM7360",
     "__version__",
@@ -57,6 +72,10 @@ def __getattr__(name):
         from .bist import BIST
 
         return BIST
+    if name == "XEM":
+        from .fpga_factory import XEM
+
+        return XEM
     if name in {"XEM7310", "XEM7360"}:
         from .fpga import XEM7310, XEM7360
 
