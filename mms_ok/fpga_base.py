@@ -20,6 +20,7 @@ from . import __version__
 from .bitstreams import format_checked_paths, resolve_user_bitstream_path
 from .diagnostics import log_critical, log_error
 from .display import print_fpga_overview
+from .devices import _to_text
 from .fpga_components import (
     BlockPipeOperations,
     PipeOperations,
@@ -268,7 +269,7 @@ class XEM(ABC):
         the reopen safe: serial or exact product-id drift fails before class
         validation or FPGA configuration can occur.
         """
-        actual_serial = str(self.config.serial_number)
+        actual_serial = _to_text(self.config.serial_number)
         if self._serial and actual_serial != self._serial:
             message = (
                 "Selected FrontPanel device serial changed before configuration: "

@@ -350,6 +350,23 @@ def test_xem_factory_exact_product_change_fails_before_configure(
     assert handle.configure_calls == []
 
 
+def test_xem_factory_accepts_bytes_opened_serial(bitstream_path):
+    add_device(
+        "SER7310",
+        "XEM7310-A75",
+        FakeFrontPanel.brdXEM7310A75,
+        open_serial_number=b"SER7310",
+    )
+
+    device = mms_ok.XEM(bitstream_path)
+
+    try:
+        assert isinstance(device, fpga.XEM7310)
+        assert FakeFrontPanel.instances[0].configure_calls == [bitstream_path]
+    finally:
+        device.close()
+
+
 def test_xem_factory_serial_change_fails_before_configure(bitstream_path):
     add_device(
         "SERCHANGE",
