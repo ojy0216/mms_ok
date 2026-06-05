@@ -691,6 +691,7 @@ class XEM(ABC):
         reorder_str: Optional[bool] = None,
         *,
         reverse: bool = False,
+        verbose: bool = False,
     ) -> int:
         """
         Write data to a pipe-in endpoint.
@@ -703,6 +704,7 @@ class XEM(ABC):
             endian (str): Byte order used for string and integer numpy array data
             reorder_str (bool): Deprecated; use endian instead
             reverse (bool): If True, transfer supported inputs from latest element/word first
+            verbose (bool): If True, log the prepared payload bytes as uppercase hex
 
         Returns:
             int: Number of bytes written
@@ -711,7 +713,12 @@ class XEM(ABC):
             ValueError: If data format is invalid
         """
         written = self.pipe_ops.write_to_pipe_in(
-            ep_addr, data, endian, reorder_str=reorder_str, reverse=reverse
+            ep_addr,
+            data,
+            endian,
+            reorder_str=reorder_str,
+            reverse=reverse,
+            verbose=verbose,
         )
         if self.verbose_level > 0:
             logger.debug(
@@ -765,6 +772,7 @@ class XEM(ABC):
         reorder_str: Optional[bool] = None,
         *,
         reverse: bool = False,
+        verbose: bool = False,
     ) -> int:
         """
         Write data to a block pipe-in endpoint.
@@ -779,6 +787,7 @@ class XEM(ABC):
             endian (str): Byte order used for string and integer numpy array data
             reorder_str (bool): Deprecated; use endian instead
             reverse (bool): If True, transfer supported inputs from latest element/word first
+            verbose (bool): If True, log the prepared payload bytes as uppercase hex
 
         Returns:
             int: Number of bytes written
@@ -793,6 +802,7 @@ class XEM(ABC):
             endian=endian,
             reorder_str=reorder_str,
             reverse=reverse,
+            verbose=verbose,
         )
         if self.verbose_level > 0:
             logger.debug(

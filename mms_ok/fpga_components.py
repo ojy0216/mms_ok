@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Optional, Union
 
 import numpy as np
+from loguru import logger
 
 from .address import (
     BLOCK_PIPE_IN_END,
@@ -438,6 +439,7 @@ class PipeOperations:
         reorder_str: Optional[bool] = None,
         *,
         reverse: bool = False,
+        verbose: bool = False,
     ) -> int:
         """
         Write data to a pipe-in endpoint.
@@ -448,6 +450,7 @@ class PipeOperations:
             endian (str): Byte order used for string and integer numpy array data
             reorder_str (bool): Deprecated; use endian instead
             reverse (bool): If True, transfer supported inputs from latest element/word first
+            verbose (bool): If True, log the prepared payload bytes as uppercase hex
 
         Returns:
             int: Error code (0 on success)
@@ -461,9 +464,17 @@ class PipeOperations:
         prepared_data = self._prepare_data(data, endian, reverse=reverse)
 
         error_code = self.xem.WriteToPipeIn(ep_addr, prepared_data)
-        return _check_error_code(
+        result = _check_error_code(
             error_code, "WriteToPipeIn", "Failed to write to pipe-in"
         )
+        if verbose:
+            logger.debug(
+                "WriteToPipeIn >> Addr {} | Payload ({} bytes): {}",
+                hex(ep_addr),
+                len(prepared_data),
+                prepared_data.hex().upper(),
+            )
+        return result
 
     def read_from_pipe_out(
         self,
@@ -581,6 +592,7 @@ class BlockPipeOperations:
         reorder_str: Optional[bool] = None,
         *,
         reverse: bool = False,
+        verbose: bool = False,
     ) -> int:
         """
         Write data to a block pipe-in endpoint.
@@ -592,6 +604,7 @@ class BlockPipeOperations:
             endian (str): Byte order used for string and integer numpy array data
             reorder_str (bool): Deprecated; use endian instead
             reverse (bool): If True, transfer supported inputs from latest element/word first
+            verbose (bool): If True, log the prepared payload bytes as uppercase hex
 
         Returns:
             int: Error code (0 on success)
@@ -610,9 +623,19 @@ class BlockPipeOperations:
             self._transport_policy.validate_block_size(block_size, len(prepared_data))
 
         error_code = self.xem.WriteToBlockPipeIn(ep_addr, block_size, prepared_data)
-        return _check_error_code(
+        result = _check_error_code(
             error_code, "WriteToBlockPipeIn", "Failed to write to block pipe-in"
         )
+        if verbose:
+            logger.debug(
+                "WriteToBlockPipeIn >> Addr {} | block_size={} | "
+                "Payload ({} bytes): {}",
+                hex(ep_addr),
+                block_size,
+                len(prepared_data),
+                prepared_data.hex().upper(),
+            )
+        return result
 
     def read_from_block_pipe_out(
         self,
