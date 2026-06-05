@@ -75,6 +75,7 @@ def _log_pipe_in_payload_cycles(
     ep_addr: int,
     payload: bytearray,
     cycle_byte_width: int,
+    endian: str,
     *,
     block_size: Optional[int] = None,
 ) -> None:
@@ -82,7 +83,7 @@ def _log_pipe_in_payload_cycles(
     block_text = "" if block_size is None else f" | block_size={block_size}"
     cycle_count = (len(payload) + cycle_byte_width - 1) // cycle_byte_width
     logger.debug(
-        "{} >> Addr {}{} | Payload: {} bytes, {}-bit/cycle, {} cycles",
+        "{} >> Addr {}{} | FPGA payload: {} bytes, {}-bit/cycle, {} cycles",
         operation,
         hex(ep_addr),
         block_text,
@@ -91,15 +92,17 @@ def _log_pipe_in_payload_cycles(
         cycle_count,
     )
     for cycle, offset, chunk in _iter_payload_cycles(payload, cycle_byte_width):
+        fpga_payload = int.from_bytes(chunk, byteorder=endian)
         logger.debug(
-            "{} >> Addr {} | cycle {} | byte[{}:{}] | {}-bit payload: {}",
+            "{} >> Addr {} | cycle {} | byte[{}:{}] | FPGA {}-bit payload: {:0{}X}",
             operation,
             hex(ep_addr),
             cycle,
             offset,
             offset + len(chunk),
             width_bits,
-            chunk.hex().upper(),
+            fpga_payload,
+            len(chunk) * 2,
         )
 
 
@@ -513,6 +516,7 @@ class PipeOperations:
                 ep_addr,
                 prepared_data,
                 4,
+                endian,
             )
         return result
 
@@ -672,6 +676,7 @@ class BlockPipeOperations:
                 ep_addr,
                 prepared_data,
                 self._word_byte_width(),
+                endian,
                 block_size=block_size,
             )
         return result

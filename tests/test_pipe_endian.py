@@ -221,9 +221,9 @@ def test_write_to_pipe_in_verbose_logs_payload_per_pipe_cycle():
     assert any("0x80" in message for message in messages)
     assert any("32-bit/cycle" in message for message in messages)
     assert not any(expected in message for message in messages)
-    for cycle, payload in enumerate(["DDCCBBAA", "44332211", "88776655", "B2A10099"]):
+    for cycle, payload in enumerate(["AABBCCDD", "11223344", "55667788", "9900A1B2"]):
         assert any(
-            f"cycle {cycle}" in message and f"32-bit payload: {payload}" in message
+            f"cycle {cycle}" in message and f"FPGA 32-bit payload: {payload}" in message
             for message in messages
         )
 
@@ -707,9 +707,9 @@ def test_write_to_block_pipe_in_verbose_logs_usb3_payload_per_pipe_cycle_and_blo
     assert any("block_size=16" in message for message in messages)
     assert any("32-bit/cycle" in message for message in messages)
     assert not any(expected in message for message in messages)
-    for cycle, payload in enumerate(["B2A10099", "88776655", "44332211", "DDCCBBAA"]):
+    for cycle, payload in enumerate(["9900A1B2", "55667788", "11223344", "AABBCCDD"]):
         assert any(
-            f"cycle {cycle}" in message and f"32-bit payload: {payload}" in message
+            f"cycle {cycle}" in message and f"FPGA 32-bit payload: {payload}" in message
             for message in messages
         )
 
@@ -733,9 +733,9 @@ def test_write_to_block_pipe_in_verbose_logs_usb2_payload_per_pipe_cycle():
     assert xem.block_pipe_in_calls == [(0x80, 2, bytes.fromhex(expected))]
     assert any("16-bit/cycle" in message for message in messages)
     assert not any(expected in message for message in messages)
-    for cycle, payload in enumerate(["BBAA", "DDCC"]):
+    for cycle, payload in enumerate(["AABB", "CCDD"]):
         assert any(
-            f"cycle {cycle}" in message and f"16-bit payload: {payload}" in message
+            f"cycle {cycle}" in message and f"FPGA 16-bit payload: {payload}" in message
             for message in messages
         )
 
@@ -879,9 +879,9 @@ def test_xem_pipe_wrapper_passes_verbose_to_write():
     assert not any(expected in message for message in messages)
     assert any("WriteToPipeIn" in message for message in messages)
     assert any("32-bit/cycle" in message for message in messages)
-    for cycle, payload in enumerate(["DDCCBBAA", "44332211", "88776655", "B2A10099"]):
+    for cycle, payload in enumerate(["AABBCCDD", "11223344", "55667788", "9900A1B2"]):
         assert any(
-            f"cycle {cycle}" in message and f"32-bit payload: {payload}" in message
+            f"cycle {cycle}" in message and f"FPGA 32-bit payload: {payload}" in message
             for message in messages
         )
 
@@ -962,9 +962,9 @@ def test_xem_block_pipe_wrapper_passes_verbose_to_write():
         for message in messages
     )
     assert any("32-bit/cycle" in message for message in messages)
-    for cycle, payload in enumerate(["DDCCBBAA", "44332211", "88776655", "B2A10099"]):
+    for cycle, payload in enumerate(["AABBCCDD", "11223344", "55667788", "9900A1B2"]):
         assert any(
-            f"cycle {cycle}" in message and f"32-bit payload: {payload}" in message
+            f"cycle {cycle}" in message and f"FPGA 32-bit payload: {payload}" in message
             for message in messages
         )
 
