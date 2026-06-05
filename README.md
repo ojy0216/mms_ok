@@ -385,6 +385,35 @@ For write calls, each supported input type is prepared differently:
 | NumPy integer array | Flattened in C order, then each element is encoded using `endian`, independent of the array dtype byte order. |
 | NumPy non-integer array | Flattened in C order and sent as contiguous raw bytes. |
 
+#### Verbose pipe-in logging
+
+Pass `verbose=True` to pipe-in write helpers when you need to inspect the exact
+FPGA-cycle payload sent to the endpoint. The verbose log prints the prepared
+payload as uppercase hexadecimal chunks after `endian` and `reverse` have been
+applied, so it is useful for matching software writes against HDL waveforms.
+
+```python
+payload = "AABBCCDD11223344556677889900A1B2"
+
+# Logs four 32-bit FPGA payload cycles for a normal pipe-in transfer.
+fpga.WriteToPipeIn(0x80, payload, verbose=True)
+```
+
+For normal `WriteToPipeIn` calls, verbose logging uses 32-bit cycle chunks.
+`WriteToBlockPipeIn` supports the same option and also includes the selected
+`block_size` in the summary log. Block pipe verbose chunks follow the transport
+formatting policy: USB 2 block pipes log 16-bit FPGA payload cycles, while USB
+3, PCIe, and the default policy log 32-bit cycles.
+
+```python
+# Logs the selected block_size plus per-cycle FPGA payload chunks.
+fpga.WriteToBlockPipeIn(0x80, payload, block_size=16, verbose=True)
+```
+
+`verbose=True` only adds debug logging; it does not change the bytes sent or the
+return value. The device-wide `set_verbose_level(...)` option remains separate
+and logs high-level method summaries such as the byte count written.
+
 #### `endian` and `reverse`
 
 `endian` controls byte order inside each formatted word. For normal pipes, hex
