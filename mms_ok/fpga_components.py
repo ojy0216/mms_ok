@@ -63,6 +63,46 @@ def _format_hex_for_bit_width(value: int, bit_width: int) -> str:
     return f"0x{value:0{display_width}_X}"
 
 
+def _iter_payload_cycles(payload: bytearray, cycle_byte_width: int):
+    if cycle_byte_width <= 0:
+        raise ValueError("cycle_byte_width must be positive")
+    for cycle, offset in enumerate(range(0, len(payload), cycle_byte_width)):
+        yield cycle, offset, payload[offset : offset + cycle_byte_width]
+
+
+def _log_pipe_in_payload_cycles(
+    operation: str,
+    ep_addr: int,
+    payload: bytearray,
+    cycle_byte_width: int,
+    *,
+    block_size: Optional[int] = None,
+) -> None:
+    width_bits = cycle_byte_width * 8
+    block_text = "" if block_size is None else f" | block_size={block_size}"
+    cycle_count = (len(payload) + cycle_byte_width - 1) // cycle_byte_width
+    logger.debug(
+        "{} >> Addr {}{} | Payload: {} bytes, {}-bit/cycle, {} cycles",
+        operation,
+        hex(ep_addr),
+        block_text,
+        len(payload),
+        width_bits,
+        cycle_count,
+    )
+    for cycle, offset, chunk in _iter_payload_cycles(payload, cycle_byte_width):
+        logger.debug(
+            "{} >> Addr {} | cycle {} | byte[{}:{}] | {}-bit payload: {}",
+            operation,
+            hex(ep_addr),
+            cycle,
+            offset,
+            offset + len(chunk),
+            width_bits,
+            chunk.hex().upper(),
+        )
+
+
 def _check_error_code(error_code: int, operation: str, failure_message: str) -> int:
     if error_code < 0:
         ok = get_ok()
@@ -450,7 +490,7 @@ class PipeOperations:
             endian (str): Byte order used for string and integer numpy array data
             reorder_str (bool): Deprecated; use endian instead
             reverse (bool): If True, transfer supported inputs from latest element/word first
-            verbose (bool): If True, log the prepared payload bytes as uppercase hex
+            verbose (bool): If True, log payload as per-cycle uppercase hex chunks
 
         Returns:
             int: Error code (0 on success)
@@ -468,11 +508,11 @@ class PipeOperations:
             error_code, "WriteToPipeIn", "Failed to write to pipe-in"
         )
         if verbose:
-            logger.debug(
-                "WriteToPipeIn >> Addr {} | Payload ({} bytes): {}",
-                hex(ep_addr),
-                len(prepared_data),
-                prepared_data.hex().upper(),
+            _log_pipe_in_payload_cycles(
+                "WriteToPipeIn",
+                ep_addr,
+                prepared_data,
+                4,
             )
         return result
 
@@ -604,7 +644,7 @@ class BlockPipeOperations:
             endian (str): Byte order used for string and integer numpy array data
             reorder_str (bool): Deprecated; use endian instead
             reverse (bool): If True, transfer supported inputs from latest element/word first
-            verbose (bool): If True, log the prepared payload bytes as uppercase hex
+            verbose (bool): If True, log payload as per-cycle uppercase hex chunks
 
         Returns:
             int: Error code (0 on success)
@@ -627,13 +667,12 @@ class BlockPipeOperations:
             error_code, "WriteToBlockPipeIn", "Failed to write to block pipe-in"
         )
         if verbose:
-            logger.debug(
-                "WriteToBlockPipeIn >> Addr {} | block_size={} | "
-                "Payload ({} bytes): {}",
-                hex(ep_addr),
-                block_size,
-                len(prepared_data),
-                prepared_data.hex().upper(),
+            _log_pipe_in_payload_cycles(
+                "WriteToBlockPipeIn",
+                ep_addr,
+                prepared_data,
+                self._word_byte_width(),
+                block_size=block_size,
             )
         return result
 

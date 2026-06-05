@@ -203,7 +203,7 @@ def test_write_to_pipe_in_hex_reverse_reverses_word_order(kwargs, expected):
     assert xem.pipe_in_calls == [(0x80, bytes.fromhex(expected))]
 
 
-def test_write_to_pipe_in_verbose_logs_prepared_payload():
+def test_write_to_pipe_in_verbose_logs_payload_per_pipe_cycle():
     expected = "DDCCBBAA4433221188776655B2A10099"
     xem = CapturingPipeXem()
     ops = PipeOperations(xem)
@@ -219,7 +219,13 @@ def test_write_to_pipe_in_verbose_logs_prepared_payload():
     assert xem.pipe_in_calls == [(0x80, bytes.fromhex(expected))]
     assert any("WriteToPipeIn" in message for message in messages)
     assert any("0x80" in message for message in messages)
-    assert any(expected in message for message in messages)
+    assert any("32-bit/cycle" in message for message in messages)
+    assert not any(expected in message for message in messages)
+    for cycle, payload in enumerate(["DDCCBBAA", "44332211", "88776655", "B2A10099"]):
+        assert any(
+            f"cycle {cycle}" in message and f"32-bit payload: {payload}" in message
+            for message in messages
+        )
 
 
 def test_write_to_pipe_in_verbose_false_does_not_log_payload():
@@ -681,7 +687,7 @@ def test_write_to_block_pipe_in_hex_reverse_reverses_word_order(kwargs, expected
     assert xem.block_pipe_in_calls == [(0x80, 16, bytes.fromhex(expected))]
 
 
-def test_write_to_block_pipe_in_verbose_logs_payload_and_block_size():
+def test_write_to_block_pipe_in_verbose_logs_usb3_payload_per_pipe_cycle_and_block_size():
     expected = "B2A100998877665544332211DDCCBBAA"
     xem = CapturingBlockPipeXem()
     ops = BlockPipeOperations(xem, bt_max_blocksize=16384)
@@ -699,7 +705,39 @@ def test_write_to_block_pipe_in_verbose_logs_payload_and_block_size():
     assert any("WriteToBlockPipeIn" in message for message in messages)
     assert any("0x80" in message for message in messages)
     assert any("block_size=16" in message for message in messages)
-    assert any(expected in message for message in messages)
+    assert any("32-bit/cycle" in message for message in messages)
+    assert not any(expected in message for message in messages)
+    for cycle, payload in enumerate(["B2A10099", "88776655", "44332211", "DDCCBBAA"]):
+        assert any(
+            f"cycle {cycle}" in message and f"32-bit payload: {payload}" in message
+            for message in messages
+        )
+
+
+def test_write_to_block_pipe_in_verbose_logs_usb2_payload_per_pipe_cycle():
+    expected = "BBAADDCC"
+    xem = CapturingBlockPipeXem()
+    ops = BlockPipeOperations(
+        xem, bt_max_blocksize=64, usb_speed="FULL", device_interface="USB 2"
+    )
+
+    messages = capture_debug_messages(
+        lambda: ops.write_to_block_pipe_in(
+            0x80,
+            "AABBCCDD",
+            block_size=2,
+            verbose=True,
+        )
+    )
+
+    assert xem.block_pipe_in_calls == [(0x80, 2, bytes.fromhex(expected))]
+    assert any("16-bit/cycle" in message for message in messages)
+    assert not any(expected in message for message in messages)
+    for cycle, payload in enumerate(["BBAA", "DDCC"]):
+        assert any(
+            f"cycle {cycle}" in message and f"16-bit payload: {payload}" in message
+            for message in messages
+        )
 
 
 def test_write_to_block_pipe_in_hex_reverse_uses_32_bit_words_for_usb2():
@@ -838,9 +876,14 @@ def test_xem_pipe_wrapper_passes_verbose_to_write():
     )
 
     assert pipe_xem.pipe_in_calls == [(0x80, bytes.fromhex(expected))]
-    assert any(
-        "WriteToPipeIn" in message and expected in message for message in messages
-    )
+    assert not any(expected in message for message in messages)
+    assert any("WriteToPipeIn" in message for message in messages)
+    assert any("32-bit/cycle" in message for message in messages)
+    for cycle, payload in enumerate(["DDCCBBAA", "44332211", "88776655", "B2A10099"]):
+        assert any(
+            f"cycle {cycle}" in message and f"32-bit payload: {payload}" in message
+            for message in messages
+        )
 
 
 def test_xem_pipe_wrapper_passes_reverse_to_read():
@@ -913,12 +956,17 @@ def test_xem_block_pipe_wrapper_passes_verbose_to_write():
     )
 
     assert block_xem.block_pipe_in_calls == [(0x80, 16, bytes.fromhex(expected))]
+    assert not any(expected in message for message in messages)
     assert any(
-        "WriteToBlockPipeIn" in message
-        and "block_size=16" in message
-        and expected in message
+        "WriteToBlockPipeIn" in message and "block_size=16" in message
         for message in messages
     )
+    assert any("32-bit/cycle" in message for message in messages)
+    for cycle, payload in enumerate(["DDCCBBAA", "44332211", "88776655", "B2A10099"]):
+        assert any(
+            f"cycle {cycle}" in message and f"32-bit payload: {payload}" in message
+            for message in messages
+        )
 
 
 def test_xem_block_pipe_wrapper_passes_reverse_to_read():

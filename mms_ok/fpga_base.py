@@ -704,7 +704,7 @@ class XEM(ABC):
             endian (str): Byte order used for string and integer numpy array data
             reorder_str (bool): Deprecated; use endian instead
             reverse (bool): If True, transfer supported inputs from latest element/word first
-            verbose (bool): If True, log the prepared payload bytes as uppercase hex
+            verbose (bool): If True, log payload as per-cycle uppercase hex chunks
 
         Returns:
             int: Number of bytes written
@@ -787,7 +787,7 @@ class XEM(ABC):
             endian (str): Byte order used for string and integer numpy array data
             reorder_str (bool): Deprecated; use endian instead
             reverse (bool): If True, transfer supported inputs from latest element/word first
-            verbose (bool): If True, log the prepared payload bytes as uppercase hex
+            verbose (bool): If True, log payload as per-cycle uppercase hex chunks
 
         Returns:
             int: Number of bytes written
