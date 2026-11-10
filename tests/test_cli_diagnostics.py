@@ -181,6 +181,65 @@ def test_bist_subcommand_exits_failure_when_bist_fails(monkeypatch):
     assert cli.main(["bist"]) == cli.EXIT_BIST_FAILED
 
 
+@pytest.mark.parametrize(
+    ("is_macos", "mac_version", "machine", "os_name", "details"),
+    [
+        (False, "15.3.1", "AMD64", "Windows", "10.0.26300 (AMD64)"),
+        (True, "15.3.1", "arm64", "macOS", "15.3.1 (arm64)"),
+        (True, "15.3.1", "x86_64", "macOS", "15.3.1 (x86_64)"),
+        (True, "", "arm64", "macOS", "24.3.0 (arm64)"),
+    ],
+    ids=["windows", "macos-arm64", "macos-x86_64", "macos-release-fallback"],
+)
+@pytest.mark.parametrize("sdk_available", [True, False], ids=["sdk-ok", "sdk-failed"])
+def test_doctor_reports_operating_system(
+    monkeypatch, tmp_path, capsys, is_macos, mac_version, machine,
+    os_name, details, sdk_available,
+):
+    lib_dir = str(tmp_path / "cache")
+    sdk_dir = str(tmp_path / "sdk")
+    for module in (cli, doctor, ok_setup):
+        monkeypatch.setattr(module, "_is_macos", lambda: is_macos)
+    monkeypatch.setattr(doctor.platform, "version", lambda: "10.0.26300")
+    monkeypatch.setattr(doctor.platform, "mac_ver", lambda: (mac_version, (), ""))
+    monkeypatch.setattr(doctor.platform, "release", lambda: "24.3.0")
+    monkeypatch.setattr(doctor.platform, "machine", lambda: machine)
+    monkeypatch.setenv("COLUMNS", "240")
+    monkeypatch.setattr(doctor.os.path, "isdir", lambda path: sdk_available)
+    cache = _cache(lib_dir, complete=sdk_available)
+    if is_macos:
+        cache["files"] = {
+            name: {"path": os.path.join(lib_dir, name), "exists": sdk_available}
+            for name in ("ok.py", "_ok.so", "libokFrontPanel.2.dylib")
+        }
+    monkeypatch.setattr(doctor, "frontpanel_cache_status", lambda path: cache)
+    monkeypatch.setattr(
+        doctor,
+        "probe_frontpanel_import",
+        lambda path, **kwargs: {
+            "ok_module": FakeOk if sdk_available else None,
+            "ok_imported": sdk_available,
+            "_ok_imported": sdk_available,
+            "ok_error": None if sdk_available else "ImportError: no module named ok",
+            "_ok_error": None if sdk_available else "ImportError: no module named _ok",
+            "used_cache_path": sdk_available,
+        },
+    )
+    monkeypatch.setattr(doctor, "get_frontpanel_version", lambda ok: "9.9.9")
+
+    status = cli.main(["doctor", "--frontpanel-dir", sdk_dir, "--lib-dir", lib_dir])
+
+    output = capsys.readouterr().out
+    assert status == (0 if sdk_available else 1)
+    lines = output.splitlines()
+    os_index = next(i for i, line in enumerate(lines) if "Operating system" in line)
+    assert "[O]" in lines[os_index]
+    assert os_name in lines[os_index]
+    assert details in lines[os_index]
+    assert "Python runtime" in lines[os_index + 1]
+    assert ("PASS" if sdk_available else "FAIL") in output
+
+
 def test_doctor_success_reports_api_and_device_count(monkeypatch, tmp_path, capsys):
     lib_dir = str(tmp_path / "cache")
     sdk_dir = str(tmp_path / "sdk")

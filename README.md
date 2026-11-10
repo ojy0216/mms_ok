@@ -92,7 +92,7 @@ python -m mms_ok doctor --lib-dir /path/to/cache
 python -m mms_ok reset-cache --frontpanel-dir "$SDK_DIR"
 ```
 
-`--frontpanel-dir` overrides `MMS_OK_FRONTPANEL_DIR` for that command. `--lib-dir` selects the setup/reset destination or the cache inspected by `doctor`; the default runtime cache is `~/mms_ok`. Use `doctor --frontpanel-dir ... --lib-dir ...` to inspect a specific setup without copying files. Diagnostics show the SDK version, Python executable/version/architecture, binding/native load paths, and the underlying import or native loader error. On macOS, check the Python 3.11 minimum, arm64/x86_64 compatibility, and the dylib; Windows diagnostics describe `.pyd` and DLL requirements.
+`--frontpanel-dir` overrides `MMS_OK_FRONTPANEL_DIR` for that command. `--lib-dir` selects the setup/reset destination or the cache inspected by `doctor`; the default runtime cache is `~/mms_ok`. Use `doctor --frontpanel-dir ... --lib-dir ...` to inspect a specific setup without copying files. Diagnostics show the operating system name/version/architecture, SDK version, Python executable/version/architecture, binding/native load paths, and the underlying import or native loader error. The informational `Operating system` row always appears immediately above `Python runtime` and does not affect the diagnostic result or exit code. On macOS, check the Python 3.11 minimum, arm64/x86_64 compatibility, and the dylib; Windows diagnostics describe `.pyd` and DLL requirements.
 
 FrontPanel 6 obtains a Classic data port after FPGA configuration for Wire, Trigger, Pipe, BlockPipe, and Register operations. Device settings, error state, configuration, and closing remain on the device handle. The existing public Python API remains the same.
 

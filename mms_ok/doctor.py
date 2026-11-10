@@ -127,6 +127,19 @@ def run_doctor(frontpanel_dir: str, lib_dir: str) -> int:
             "present" if info["exists"] else "missing",
             "{}: {}".format(filename, info["path"]),
         )
+    if _is_macos():
+        os_name = "macOS"
+        os_version = platform.mac_ver()[0] or platform.release()
+    else:
+        os_name = "Windows"
+        os_version = platform.version()
+    _append_doctor_row(
+        rows,
+        STATUS_PASS,
+        "Operating system",
+        os_name,
+        "{} ({})".format(os_version, platform.machine()),
+    )
     _append_doctor_row(rows, STATUS_PASS, "Python runtime", platform.python_version(),
                        "{} ({})".format(sys.executable, platform.machine()))
     bitness = python_bitness()
