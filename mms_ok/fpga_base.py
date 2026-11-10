@@ -17,6 +17,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from . import __version__
+from ._frontpanel_compat import data_port, error_message, open_device, read_device_info
 from .bitstreams import format_checked_paths, resolve_user_bitstream_path
 from .diagnostics import log_critical, log_error
 from .display import print_fpga_overview
@@ -92,10 +93,7 @@ class XEM(ABC):
         self._serial = "" if serial is None else str(serial)
         self._expected_product_id = _expected_product_id
         ok = get_ok()
-        self.xem = ok.okCFrontPanel()
-        self._close_finalizer = weakref.finalize(
-            self, self._finalize_xem_handle, self.xem
-        )
+        self.xem = None
         self._frontpanel_version = get_frontpanel_version(ok)
 
         try:
@@ -118,11 +116,11 @@ class XEM(ABC):
             self.trigger_poll_interval = 0.001
 
             # Initialize components
-            self.wire_ops = WireOperations(self.xem, self.config.wire_width)
-            self.trigger_ops = TriggerOperations(self.xem, self.config.trigger_width)
-            self.pipe_ops = PipeOperations(self.xem)
+            self.wire_ops = WireOperations(self._data_port, self.config.wire_width)
+            self.trigger_ops = TriggerOperations(self._data_port, self.config.trigger_width)
+            self.pipe_ops = PipeOperations(self._data_port)
             self.block_pipe_ops = BlockPipeOperations(
-                self.xem,
+                self._data_port,
                 self.config.max_bt_blocksize,
                 usb_speed=self.config.usb_speed,
                 device_interface=self.config.device_interface_str,
@@ -147,7 +145,7 @@ class XEM(ABC):
 
     def _check_error_code(self, error_code: int, operation: str, failure_message: str) -> int:
         if error_code < 0:
-            error_str = get_ok().okCFrontPanel.GetErrorString(error_code)
+            error_str = error_message(get_ok(), error_code)
             log_error(f"{operation} failed - {error_str}")
             raise RuntimeError(f"{failure_message} ({error_str})")
         return error_code
@@ -156,7 +154,7 @@ class XEM(ABC):
         match = _FRONTPANEL_ERROR_CODE_RE.search(str(exc))
         if match is not None:
             error_code = int(match.group(1))
-            return get_ok().okCFrontPanel.GetErrorString(error_code)
+            return error_message(get_ok(), error_code)
 
         get_last_error = getattr(self.xem, "GetLastError", None)
         if callable(get_last_error):
@@ -165,7 +163,7 @@ class XEM(ABC):
             except Exception:
                 error_code = None
             if isinstance(error_code, int) and error_code < 0:
-                return get_ok().okCFrontPanel.GetErrorString(error_code)
+                return error_message(get_ok(), error_code)
 
         get_last_error_message = getattr(self.xem, "GetLastErrorMessage", None)
         if callable(get_last_error_message):
@@ -241,21 +239,13 @@ class XEM(ABC):
         """
         ok = get_ok()
 
-        error_code = self.xem.OpenBySerial(self._serial)
-        if error_code:
-            if self._serial:
-                message = (
-                    "Device with serial {!r} is not opened! "
-                    "(OpenBySerial returned {})".format(self._serial, error_code)
-                )
-            else:
-                message = "Device is not opened!"
-            log_critical(message)
-            raise ConnectionError(message)
+        self.xem = open_device(ok, self._serial)
         self._opened = True
+        self._close_finalizer = weakref.finalize(
+            self, self._finalize_xem_handle, self.xem
+        )
 
-        device_info = ok.okTDeviceInfo()
-        self.xem.GetDeviceInfo(device_info)
+        device_info = read_device_info(ok, self.xem)
 
         self.config = FPGAConfig.from_device_info(device_info)
         self.config.validate()
@@ -335,6 +325,7 @@ class XEM(ABC):
         if not self.xem.IsFrontPanelEnabled():
             log_critical("FrontPanel is not enabled!")
             raise RuntimeError("FrontPanel is not enabled!")
+        self._data_port = data_port(self.xem)
 
     @abstractmethod
     def _check_device_settings(self) -> None:
@@ -981,7 +972,7 @@ class XEM(ABC):
         validate_address(0, 2**32 - 1, addr)
         validate_wire_value(data, 32)
 
-        error_code = self.xem.WriteRegister(addr, data)
+        error_code = getattr(self, "_data_port", self.xem).WriteRegister(addr, data)
         self._check_error_code(error_code, "WriteRegister", "Failed to write register value")
         if self.verbose_level > 0:
             logger.debug(f"WriteRegister >> Addr {hex(addr)} | Value: {data}")
@@ -1003,7 +994,7 @@ class XEM(ABC):
         validate_address(0, 2**32 - 1, addr)
 
         try:
-            value = self.xem.ReadRegister(addr)
+            value = getattr(self, "_data_port", self.xem).ReadRegister(addr)
         except RuntimeError as exc:
             error_str = self._resolve_frontpanel_runtime_error(exc)
             log_error(f"ReadRegister failed - {error_str}")

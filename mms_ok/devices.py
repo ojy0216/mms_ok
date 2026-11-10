@@ -6,6 +6,13 @@ from dataclasses import asdict, dataclass
 from typing import Any, Dict, List
 
 from .ok_setup import import_ok
+from ._frontpanel_compat import (
+    close_device,
+    device_serials,
+    open_device,
+    read_device_info,
+    to_text,
+)
 
 
 class FrontPanelUnavailableError(RuntimeError):
@@ -30,37 +37,25 @@ class DeviceInfo:
 
 
 def _close_frontpanel(handle: Any) -> None:
-    try:
-        if bool(handle.IsOpen()):
-            handle.Close()
-    except Exception:
-        try:
-            handle.Close()
-        except Exception:
-            pass
+    close_device(handle)
 
 
 def _to_text(value: Any) -> str:
-    if isinstance(value, bytes):
-        return value.decode(errors="replace")
-    return str(value)
+    return to_text(value)
 
 
 def _get_device_info(ok: Any, serial: str, model: str) -> DeviceInfo:
-    handle = ok.okCFrontPanel()
-    opened = False
-
+    handle = None
     try:
-        error_code = handle.OpenBySerial(serial)
-        if error_code != 0:
+        handle = open_device(ok, serial)
+        raw_info = read_device_info(ok, handle)
+        actual_serial = _to_text(getattr(raw_info, "serialNumber", serial))
+        if actual_serial != serial:
             raise DeviceDiscoveryError(
-                "Could not open device with serial {!r} while reading device info "
-                "(OpenBySerial returned {}).".format(serial, error_code)
+                "Device serial changed while reading device info: {!r} != {!r}".format(
+                    actual_serial, serial
+                )
             )
-        opened = True
-
-        raw_info = ok.okTDeviceInfo()
-        handle.GetDeviceInfo(raw_info)
 
         return DeviceInfo(
             serial=_to_text(getattr(raw_info, "serialNumber", serial)),
@@ -69,8 +64,7 @@ def _get_device_info(ok: Any, serial: str, model: str) -> DeviceInfo:
             product_id=int(getattr(raw_info, "productID", 0)),
         )
     finally:
-        if opened:
-            _close_frontpanel(handle)
+        _close_frontpanel(handle)
 
 
 def list_devices() -> List[DeviceInfo]:
@@ -89,13 +83,8 @@ def list_devices() -> List[DeviceInfo]:
         ) from exc
 
     try:
-        discovery = ok.okCFrontPanel()
-        device_count = discovery.GetDeviceCount()
         devices = []
-
-        for index in range(device_count):
-            serial = _to_text(discovery.GetDeviceListSerial(index))
-            model = _to_text(discovery.GetDeviceListModel(index))
+        for serial, model in device_serials(ok):
             devices.append(_get_device_info(ok, serial, model))
 
         return devices

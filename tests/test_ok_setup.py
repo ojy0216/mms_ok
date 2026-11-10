@@ -45,11 +45,13 @@ def _write_frontpanel_sdk(sdk_dir, ok_source=VALID_OK):
 
 @pytest.fixture(autouse=True)
 def isolate_ok_import_state(monkeypatch, tmp_path):
+    monkeypatch.setattr(ok_setup, "_is_macos", lambda: False)
+    monkeypatch.delenv("MMS_OK_FRONTPANEL_DIR", raising=False)
     old_path = list(sys.path)
     sentinel = object()
     old_modules = {
         name: sys.modules.get(name, sentinel)
-        for name in ("ok", "_ok")
+        for name in ("ok", "_ok", "ok.ok", "ok._ok")
     }
     monkeypatch.setattr(
         ok_setup,
@@ -57,8 +59,8 @@ def isolate_ok_import_state(monkeypatch, tmp_path):
         str(tmp_path / "missing-default-sdk"),
     )
 
-    sys.modules.pop("ok", None)
-    sys.modules.pop("_ok", None)
+    for name in old_modules:
+        sys.modules.pop(name, None)
 
     yield
 
@@ -193,3 +195,18 @@ def test_copy_frontpanel_files_does_not_mutate_sys_path(monkeypatch, tmp_path):
     assert (cache_dir / "_ok.pyd").is_file()
     assert (cache_dir / "okFrontPanel.dll").is_file()
     assert sys.path == original_path
+
+
+def test_windows_sdk_path_from_environment_and_python37(monkeypatch, tmp_path):
+    sdk = _write_frontpanel_sdk(tmp_path / "custom-sdk")
+    monkeypatch.setenv("MMS_OK_FRONTPANEL_DIR", str(sdk))
+    monkeypatch.setattr(ok_setup.sys, "version_info", (3, 7, 0))
+    module = ok_setup.import_ok(lib_dir=str(tmp_path / "missing-cache"))
+    assert os.path.samefile(module.__file__, sdk / "API" / "Python" / "x64" / "ok.py")
+
+
+def test_windows_frontpanel61_requires_python311(monkeypatch, tmp_path):
+    cache = _write_frontpanel_cache(tmp_path / "cache", VALID_OK.replace("1.2.3", "6.1.0"))
+    monkeypatch.setattr(ok_setup.sys, "version_info", (3, 10, 0))
+    with pytest.raises(ImportError, match="requires Python 3.11"):
+        ok_setup.import_ok(lib_dir=str(cache))

@@ -17,6 +17,7 @@ from .address import (
     WIRE_IN_START,
     WIRE_OUT_START,
 )
+from ._frontpanel_compat import close_device, open_device, read_device_info
 from .bitstreams import (
     LEGACY_BITSTREAM_DIR,
     PACKAGE_BITSTREAM_DIR,
@@ -27,7 +28,9 @@ from .bitstreams import (
 from .bist_util import btpipe_progress, pipe_progress, trigger_progress, wire_progress
 from .diagnostics import log_critical, log_error
 from .fpga import XEM7310, XEM7360
+from .fpga_base import ProductIDMismatchError
 from .fpga_config import FPGAConfig
+from .fpga_factory import _select_device
 from .ok_setup import get_ok
 
 console = Console()
@@ -47,9 +50,10 @@ BIST_BITSTREAMS = {
 
 
 class BIST:
-    def __init__(self):
+    def __init__(self, *, serial=None):
         logger.info("Initializing BIST...")
-        self.config = self._detect_config()
+        self._target = _select_device(serial, caller="BIST")
+        self.config = self._detect_config(self._target.serial, self._target.product_id)
         logger.info(f"Detected BIST target: {self.config.product_name}")
 
         bitstream_name = BIST_BITSTREAMS.get(self.config.product_name)
@@ -66,20 +70,23 @@ class BIST:
         self.trigger_correct = 0
 
     @staticmethod
-    def _detect_config() -> FPGAConfig:
+    def _detect_config(serial, expected_product_id) -> FPGAConfig:
         ok = get_ok()
-        xem = ok.okCFrontPanel()
+        xem = None
 
         try:
-            if xem.OpenBySerial(""):
-                log_critical("Device is not opened!")
-                raise ConnectionError("Device is not opened!")
-
-            device_info = ok.okTDeviceInfo()
-            xem.GetDeviceInfo(device_info)
+            xem = open_device(ok, serial)
+            device_info = read_device_info(ok, xem)
+            if (
+                device_info.serialNumber != serial
+                or int(device_info.productID) != int(expected_product_id)
+            ):
+                raise ProductIDMismatchError(
+                    "BIST device identity changed before configuration"
+                )
             return FPGAConfig.from_device_info(device_info)
         finally:
-            xem.Close()
+            close_device(xem)
 
     @staticmethod
     def _resolve_bitstream_path(bitstream_name: str) -> str:
@@ -105,10 +112,14 @@ class BIST:
             raise ValueError(f"{extension} is not a valid bitstream file extension!")
 
     def _create_fpga(self):
+        kwargs = dict(
+            serial=self.config.serial_number,
+            _expected_product_id=self.config.product_id,
+        )
         if "XEM7310" in self.config.product_name:
-            return XEM7310(self._bitstream_path)
+            return XEM7310(self._bitstream_path, **kwargs)
         if "XEM7360" in self.config.product_name:
-            return XEM7360(self._bitstream_path)
+            return XEM7360(self._bitstream_path, **kwargs)
 
         log_critical(f"Invalid product name: {self.config.product_name}")
         raise ValueError(f"Invalid product name: {self.config.product_name}")

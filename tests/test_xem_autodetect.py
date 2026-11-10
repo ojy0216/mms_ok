@@ -14,6 +14,7 @@ from mms_ok import fpga_products
 from mms_ok import fpga_xem7360
 from mms_ok.devices import DeviceInfo
 from mms_ok.fpga_base import ProductIDMismatchError
+from mms_ok import bist
 
 
 class FakeDeviceInfo:
@@ -168,6 +169,22 @@ def discovered_devices():
         )
         for device in FakeFrontPanel.attached
     ]
+
+
+@pytest.mark.parametrize("product_id,model", [
+    (FakeFrontPanel.brdXEM7310A75, "XEM7310-A75"),
+    (FakeFrontPanel.brdXEM7310A200, "XEM7310-A200"),
+    (FakeFrontPanel.brdXEM7360K160T, "XEM7360-K160T"),
+])
+def test_legacy_bist_preserves_serial_product_and_closes(monkeypatch, product_id, model):
+    monkeypatch.setattr(bist, "get_ok", lambda: FakeOk)
+    add_device("LEGACY", model, product_id)
+    test = bist.BIST(serial="LEGACY")
+    with test._create_fpga() as device:
+        assert device.config.product_id == product_id
+        assert device.xem.open_serial == "LEGACY"
+        assert device.wire_ops.xem is device.xem
+    assert all(handle.close_calls == 1 for handle in FakeFrontPanel.instances)
 
 
 def test_xem_factory_is_top_level_lazy_public_and_facade_visible():

@@ -25,6 +25,7 @@ from .address import (
 )
 from .diagnostics import log_error, log_warning
 from .ok_setup import get_ok
+from ._frontpanel_compat import error_message
 from .pipeoutdata import (
     REORDER_STR_WARNING,
     PipeOutData,
@@ -109,7 +110,7 @@ def _log_pipe_in_payload_cycles(
 def _check_error_code(error_code: int, operation: str, failure_message: str) -> int:
     if error_code < 0:
         ok = get_ok()
-        error_str = ok.okCFrontPanel.GetErrorString(error_code)
+        error_str = error_message(ok, error_code)
         log_error(f"{operation} failed - {error_str}")
         raise RuntimeError(f"{failure_message} ({error_str})")
     return error_code

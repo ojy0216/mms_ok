@@ -1,0 +1,4 @@
+Python 3.7 syntax compatibility: 25 modules
+mms_ok-2.3.0-py3-none-any.whl: source matches all current modules; Python >=3.7; no bundled SDK or required ok dependency; all 3 BIST bitstreams
+mms_ok-2.3.0.tar.gz: source matches all current modules; no bundled SDK; all 3 BIST bitstreams
+Build status: SUCCESS (wheel and sdist)
