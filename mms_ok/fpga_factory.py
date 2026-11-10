@@ -23,7 +23,7 @@ def _device_summary(device: DeviceInfo) -> str:
     ).format(**device.as_dict())
 
 
-def _select_device(serial: Optional[str]) -> DeviceInfo:
+def _select_device(serial: Optional[str], *, caller="XEM") -> DeviceInfo:
     devices = list_devices()
 
     if serial is not None:
@@ -44,7 +44,7 @@ def _select_device(serial: Optional[str]) -> DeviceInfo:
         available = "; ".join(_device_summary(device) for device in devices)
         raise FPGASelectionError(
             "Multiple Opal Kelly FrontPanel devices were found; pass serial=... "
-            "to XEM. Available devices: {}".format(available)
+            "to {}. Available devices: {}".format(caller, available)
         )
 
     return devices[0]

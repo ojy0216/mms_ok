@@ -7,6 +7,7 @@ from .diagnostics import log_critical
 from .fpga_base import XEM
 from .fpga_products import xem7360_product_ids
 from .ok_setup import get_ok
+from ._frontpanel_compat import device_settings as read_device_settings
 from .validation import validate_address, validate_wire_value
 
 
@@ -58,7 +59,7 @@ class XEM7360(XEM):
         ok = get_ok()
         device_settings = ok.okCDeviceSettings()
 
-        ok.okCFrontPanel.GetDeviceSettings(self.xem, device_settings)
+        read_device_settings(ok, self.xem, device_settings)
 
         try:
             vadj_voltage_dict = {

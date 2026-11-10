@@ -51,9 +51,9 @@ logger.add(
     colorize=_stderr_should_colorize(),
 )
 
-from ._platform_gate import enforce_windows_runtime
+from ._platform_gate import enforce_supported_runtime
 
-enforce_windows_runtime(logger.critical)
+enforce_supported_runtime(logger.critical)
 
 __all__ = [
     "BIST",

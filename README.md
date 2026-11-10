@@ -30,16 +30,15 @@ and do not get board-specific LED behavior or BIST support.
 
 ## Requirements
 
-- **Windows only.**
-  - `mms_ok` supports Windows environments only.
-  - **macOS and Linux are not supported.**
-- Python 3.7 or newer.
+- **Windows and macOS.** Linux is not supported.
+- Python 3.7 or newer for the existing FrontPanel 5 setup. FrontPanel **6.1 requires Python 3.11 or newer**; use a 64-bit interpreter matching the native SDK architecture.
 - An Opal Kelly board. XEM7310/XEM7360 boards are hardware-verified by this
   package; other Opal Kelly boards are best-effort for common FrontPanel APIs.
-- The Opal Kelly FrontPanel SDK for Windows. FrontPanel SDK `5.3.6` is recommended.
+- The Opal Kelly FrontPanel SDK: the existing Windows `5.3.6` setup or macOS `6.1.0` binding API (`import ok`).
 - Python dependencies installed by `pip`: `numpy`, `bitslice`, `loguru`, `rich`, and `tqdm`.
 
 `mms_ok` imports the FrontPanel Python module as `ok`. When the Windows SDK is installed in the default Opal Kelly location, `mms_ok setup-frontpanel` can copy the default FrontPanel Python files into the user's Windows home directory, such as `%USERPROFILE%\mms_ok`.
+SDK loading is lazy: importing `mms_ok`, its public classes, or CLI help does not require the SDK. Vendor SDK binaries are not bundled with `mms_ok`.
 
 ## FrontPanel SDK setup on Windows
 
@@ -54,6 +53,50 @@ Install the Opal Kelly FrontPanel SDK before installing `mms_ok`, so the SDK fil
    ```
 
 4. Run the installer and keep the default install location unless your lab setup requires otherwise.
+
+## FrontPanel SDK setup on macOS
+
+Install the macOS SDK from Opal Kelly and use its **official `ok` wheel** in the same Python environment as `mms_ok`. For example, with Python 3.13:
+
+```bash
+python3.13 -m venv .venv
+source .venv/bin/activate
+python -m pip install mms_ok
+SDK_DIR="/path/to/FrontPanel-DevKit-6.1.0"
+python -m pip install --no-index --find-links "$SDK_DIR/API/Python" ok
+python -m mms_ok check-sdk
+python -m mms_ok doctor
+python -m mms_ok devices
+```
+
+The SDK folder and a local cache are optional once the wheel is installed. The package uses the binding API described in the [official Python API documentation](https://docs.opalkelly.com/fpsdk/frontpanel-api/programming-languages/python-api/); it does not require the separate `frontpanel` Pythonic API.
+
+To use SDK files directly, select the SDK root (or its `API/Python` directory):
+
+```bash
+export MMS_OK_FRONTPANEL_DIR="$SDK_DIR"
+python -m mms_ok check-sdk
+python -m mms_ok doctor --frontpanel-dir "$SDK_DIR"
+```
+
+macOS tries the explicitly selected SDK, then the installed official wheel, then the existing `~/mms_ok` cache. Modules and native extensions must come from the selected SDK/cache files or the wheel's installed file records. Temporary changes to `sys.path` are restored after loading. Windows retains its default SDK path and automatic cache copy behavior; `MMS_OK_FRONTPANEL_DIR` can select a different Windows SDK too.
+
+An optional copy keeps `ok.py`, `_ok.so`, and the required `libokFrontPanel.2.dylib` together:
+
+```bash
+python -m mms_ok setup-frontpanel --frontpanel-dir "$SDK_DIR"
+# To choose a different copy destination:
+python -m mms_ok setup-frontpanel --frontpanel-dir "$SDK_DIR" --lib-dir /path/to/cache
+python -m mms_ok doctor --lib-dir /path/to/cache
+# Refresh existing files after an SDK upgrade:
+python -m mms_ok reset-cache --frontpanel-dir "$SDK_DIR"
+```
+
+`--frontpanel-dir` overrides `MMS_OK_FRONTPANEL_DIR` for that command. `--lib-dir` selects the setup/reset destination or the cache inspected by `doctor`; the default runtime cache is `~/mms_ok`. Use `doctor --frontpanel-dir ... --lib-dir ...` to inspect a specific setup without copying files. Diagnostics show the operating system name/version/architecture, SDK version, Python executable/version/architecture, binding/native load paths, and the underlying import or native loader error. The informational `Operating system` row always appears immediately above `Python runtime` and does not affect the diagnostic result or exit code. On macOS, check the Python 3.11 minimum, arm64/x86_64 compatibility, and the dylib; Windows diagnostics describe `.pyd` and DLL requirements.
+
+FrontPanel 6 obtains a Classic data port after FPGA configuration for Wire, Trigger, Pipe, BlockPipe, and Register operations. Device settings, error state, configuration, and closing remain on the device handle. The existing public Python API remains the same.
+
+macOS arm64, FrontPanel 6.1.0, and XEM7310-A200 have passed the hardware test documented in [the validation record](docs/validation/frontpanel-6.1.0-macos-arm64.md). Other 6.x versions and Intel Macs have not been hardware-validated. This validation uses a USB High-Speed connection; USB 3.0 throughput benchmarking is outside its scope.
 
 ## Installation
 
@@ -169,6 +212,20 @@ Equivalent module execution:
 python -m mms_ok bist
 ```
 
+With multiple boards connected, select a serial explicitly:
+
+```bash
+python -m mms_ok bist --serial 224800128A
+```
+
+```python
+from mms_ok import BIST
+
+passed = BIST(serial="224800128A").run_test()
+```
+
+`BIST()` selects the single connected device and requires `serial=...` when several are present. Discovery and configuration use the same serial and product ID, checked again before loading the bitstream. BIST replaces the FPGA's current configuration with the packaged board-test bitstream; it does not update firmware or write flash. Success requires Wires, Pipes, BTPipes, and Triggers each to pass **32/32**. The CLI exits with **0** on success and **4** on a test or selection failure.
+
 The package first looks for its packaged BIST bitstreams. For backward compatibility, it can also fall back to `%USERPROFILE%\mms_ok\bitstreams` if packaged files are unavailable.
 
 ## Bitstream paths
@@ -205,7 +262,7 @@ first, then the legacy `%USERPROFILE%\mms_ok\bitstreams` fallback.
 
 A typical session is:
 
-1. Install the Windows FrontPanel SDK with the setup guide above.
+1. Install the Windows or macOS FrontPanel SDK with the setup guide above.
 2. Install `mms_ok` and verify that it can import the FrontPanel SDK with `mms_ok check-sdk`.
 3. Connect an Opal Kelly board and verify visibility with `mms_ok devices`.
 4. When appropriate, verify the board with `mms_ok bist`.

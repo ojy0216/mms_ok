@@ -1,0 +1,35 @@
+                             FrontPanel Diagnostics
+┏━━━━━━━━┳━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Status ┃ Check             ┃ Result   ┃ Details                              ┃
+┡━━━━━━━━╇━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│  [O]   │ SDK path          │ found    │ /Users/jy/Downloads/FrontPanel-DevKi │
+│        │                   │          │ t-6.1.0                              │
+│  [O]   │ Local cache       │ complete │ /tmp/mms-ok-frontpanel-cache         │
+│  [O]   │ Cache file        │ present  │ ok.py:                               │
+│        │                   │          │ /tmp/mms-ok-frontpanel-cache/ok.py   │
+│  [O]   │ Cache file        │ present  │ _ok.so:                              │
+│        │                   │          │ /tmp/mms-ok-frontpanel-cache/_ok.so  │
+│  [O]   │ Cache file        │ present  │ libokFrontPanel.2.dylib:             │
+│        │                   │          │ /tmp/mms-ok-frontpanel-cache/libokFr │
+│        │                   │          │ ontPanel.2.dylib                     │
+│  [O]   │ Python runtime    │ 3.13.18  │ /Users/jy/dev/mms_ok/.venv/bin/pytho │
+│        │                   │          │ n (arm64)                            │
+│  [O]   │ Python bitness    │ 64-bit   │ Use 64-bit Python matching the SDK   │
+│        │                   │          │ architecture (arm64/x86_64 on macOS) │
+│  [O]   │ _ok native module │ imported │ /Users/jy/Downloads/FrontPanel-DevKi │
+│        │                   │          │ t-6.1.0/API/Python/_ok.so            │
+│  [O]   │ ok import         │ imported │ /Users/jy/Downloads/FrontPanel-DevKi │
+│        │                   │          │ t-6.1.0/API/Python/ok.py             │
+│  [O]   │ FrontPanel API    │ 6.1.0    │ Source: sdk                          │
+│  [O]   │ Device count      │ 1        │ queried via FrontPanel compatibility │
+│        │                   │          │ layer                                │
+└────────┴───────────────────┴──────────┴──────────────────────────────────────┘
+
+Actionable guidance:
+- No critical FrontPanel setup issue detected.
+
+          #    ##############      _   _
+         #     #            #      *   *
+    #   #      #    PASS    #        |
+     # #       #            #      \___/
+      #        ##############

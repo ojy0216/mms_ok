@@ -6,7 +6,14 @@ import pytest
 
 import mms_ok
 from mms_ok import cli
-from mms_ok import doctor
+from mms_ok import doctor, ok_setup
+
+
+@pytest.fixture(autouse=True)
+def windows_diagnostics(monkeypatch):
+    for module in (cli, doctor, ok_setup):
+        monkeypatch.setattr(module, "_is_macos", lambda: False)
+    monkeypatch.delenv("MMS_OK_FRONTPANEL_DIR", raising=False)
 
 
 class FakeFrontPanel:
@@ -174,6 +181,65 @@ def test_bist_subcommand_exits_failure_when_bist_fails(monkeypatch):
     assert cli.main(["bist"]) == cli.EXIT_BIST_FAILED
 
 
+@pytest.mark.parametrize(
+    ("is_macos", "mac_version", "machine", "os_name", "details"),
+    [
+        (False, "15.3.1", "AMD64", "Windows", "10.0.26300 (AMD64)"),
+        (True, "15.3.1", "arm64", "macOS", "15.3.1 (arm64)"),
+        (True, "15.3.1", "x86_64", "macOS", "15.3.1 (x86_64)"),
+        (True, "", "arm64", "macOS", "24.3.0 (arm64)"),
+    ],
+    ids=["windows", "macos-arm64", "macos-x86_64", "macos-release-fallback"],
+)
+@pytest.mark.parametrize("sdk_available", [True, False], ids=["sdk-ok", "sdk-failed"])
+def test_doctor_reports_operating_system(
+    monkeypatch, tmp_path, capsys, is_macos, mac_version, machine,
+    os_name, details, sdk_available,
+):
+    lib_dir = str(tmp_path / "cache")
+    sdk_dir = str(tmp_path / "sdk")
+    for module in (cli, doctor, ok_setup):
+        monkeypatch.setattr(module, "_is_macos", lambda: is_macos)
+    monkeypatch.setattr(doctor.platform, "version", lambda: "10.0.26300")
+    monkeypatch.setattr(doctor.platform, "mac_ver", lambda: (mac_version, (), ""))
+    monkeypatch.setattr(doctor.platform, "release", lambda: "24.3.0")
+    monkeypatch.setattr(doctor.platform, "machine", lambda: machine)
+    monkeypatch.setenv("COLUMNS", "240")
+    monkeypatch.setattr(doctor.os.path, "isdir", lambda path: sdk_available)
+    cache = _cache(lib_dir, complete=sdk_available)
+    if is_macos:
+        cache["files"] = {
+            name: {"path": os.path.join(lib_dir, name), "exists": sdk_available}
+            for name in ("ok.py", "_ok.so", "libokFrontPanel.2.dylib")
+        }
+    monkeypatch.setattr(doctor, "frontpanel_cache_status", lambda path: cache)
+    monkeypatch.setattr(
+        doctor,
+        "probe_frontpanel_import",
+        lambda path, **kwargs: {
+            "ok_module": FakeOk if sdk_available else None,
+            "ok_imported": sdk_available,
+            "_ok_imported": sdk_available,
+            "ok_error": None if sdk_available else "ImportError: no module named ok",
+            "_ok_error": None if sdk_available else "ImportError: no module named _ok",
+            "used_cache_path": sdk_available,
+        },
+    )
+    monkeypatch.setattr(doctor, "get_frontpanel_version", lambda ok: "9.9.9")
+
+    status = cli.main(["doctor", "--frontpanel-dir", sdk_dir, "--lib-dir", lib_dir])
+
+    output = capsys.readouterr().out
+    assert status == (0 if sdk_available else 1)
+    lines = output.splitlines()
+    os_index = next(i for i, line in enumerate(lines) if "Operating system" in line)
+    assert "[O]" in lines[os_index]
+    assert os_name in lines[os_index]
+    assert details in lines[os_index]
+    assert "Python runtime" in lines[os_index + 1]
+    assert ("PASS" if sdk_available else "FAIL") in output
+
+
 def test_doctor_success_reports_api_and_device_count(monkeypatch, tmp_path, capsys):
     lib_dir = str(tmp_path / "cache")
     sdk_dir = str(tmp_path / "sdk")
@@ -183,7 +249,7 @@ def test_doctor_success_reports_api_and_device_count(monkeypatch, tmp_path, caps
     monkeypatch.setattr(
         doctor,
         "probe_frontpanel_import",
-        lambda path: {
+        lambda path, **kwargs: {
             "ok_module": FakeOk,
             "ok_imported": True,
             "_ok_imported": True,
@@ -217,7 +283,7 @@ def test_doctor_failure_reports_guidance(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(
         doctor,
         "probe_frontpanel_import",
-        lambda path: {
+        lambda path, **kwargs: {
             "ok_module": None,
             "ok_imported": False,
             "_ok_imported": False,
@@ -249,7 +315,7 @@ def test_doctor_fails_when_frontpanel_api_probe_fails(
     monkeypatch.setattr(
         doctor,
         "probe_frontpanel_import",
-        lambda path: {
+        lambda path, **kwargs: {
             "ok_module": BrokenOk,
             "ok_imported": True,
             "_ok_imported": True,
@@ -298,7 +364,7 @@ def test_doctor_fails_when_frontpanel_api_probe_fails(
         ),
     ],
 )
-def test_doctor_fails_when_setup_rows_fail_even_if_ok_import_succeeds(
+def test_doctor_only_requires_importable_runtime_not_sdk_folder(
     monkeypatch, tmp_path, capsys, sdk_exists, cache, probe
 ):
     lib_dir = str(tmp_path / "cache")
@@ -306,13 +372,13 @@ def test_doctor_fails_when_setup_rows_fail_even_if_ok_import_succeeds(
 
     monkeypatch.setattr(doctor.os.path, "isdir", lambda path: sdk_exists)
     monkeypatch.setattr(doctor, "frontpanel_cache_status", cache)
-    monkeypatch.setattr(doctor, "probe_frontpanel_import", lambda path: probe)
+    monkeypatch.setattr(doctor, "probe_frontpanel_import", lambda path, **kwargs: probe)
     monkeypatch.setattr(doctor, "get_frontpanel_version", lambda ok: "9.9.9")
 
     status = cli.main(["doctor", "--frontpanel-dir", sdk_dir, "--lib-dir", lib_dir])
 
     captured = capsys.readouterr()
-    assert status == 1
+    assert status == (0 if not sdk_exists else 1)
     assert "ok import" in captured.out
     assert "imported" in captured.out
 
@@ -330,7 +396,7 @@ def test_doctor_allows_missing_optional_cache_when_imports_and_api_work(
     monkeypatch.setattr(
         doctor,
         "probe_frontpanel_import",
-        lambda path: {
+        lambda path, **kwargs: {
             "ok_module": FakeOk,
             "ok_imported": True,
             "_ok_imported": True,
@@ -362,7 +428,7 @@ def test_doctor_warning_only_zero_devices_exits_success(
     monkeypatch.setattr(
         doctor,
         "probe_frontpanel_import",
-        lambda path: {
+        lambda path, **kwargs: {
             "ok_module": EmptyOk,
             "ok_imported": True,
             "_ok_imported": True,
@@ -448,7 +514,7 @@ def test_setup_frontpanel_reports_copy_when_cache_is_missing(
     monkeypatch.setattr(
         cli, "frontpanel_cache_status", lambda path: _cache(lib_dir, complete=False)
     )
-    monkeypatch.setattr(cli, "copy_frontpanel_files", lambda: lib_dir)
+    monkeypatch.setattr(cli, "copy_frontpanel_files", lambda **kwargs: lib_dir)
 
     status = cli.main(["setup-frontpanel"])
 

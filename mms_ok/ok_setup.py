@@ -1,4 +1,7 @@
+"""Lazy, source-checked loading of the vendor FrontPanel binding API."""
+
 import importlib
+import importlib.util
 import os
 import shutil
 import sys
@@ -6,491 +9,400 @@ from contextlib import contextmanager
 from struct import calcsize
 from typing import Optional
 
-from loguru import logger
+try:
+    from importlib import metadata
+except ImportError:  # Python 3.7 can still use the FrontPanel 5 SDK files.
+    metadata = None
 
-from .diagnostics import log_critical
+from loguru import logger
 
 DEFAULT_FRONTPANEL_DIR = r"C:\Program Files\Opal Kelly\FrontPanelUSB"
 DEFAULT_LIB_DIR = os.path.expanduser("~/mms_ok")
+FRONTPANEL_DIR_ENV = "MMS_OK_FRONTPANEL_DIR"
+WINDOWS_FRONTPANEL_FILENAMES = ("ok.py", "_ok.pyd", "okFrontPanel.dll")
+MACOS_FRONTPANEL_FILENAMES = ("ok.py", "_ok.so", "libokFrontPanel.2.dylib")
 _ok_module = None
-FRONTPANEL_FILENAMES = ("ok.py", "_ok.pyd", "okFrontPanel.dll")
 
 
-def _frontpanel_files_exist(lib_dir: str = DEFAULT_LIB_DIR) -> bool:
-    return all(
-        os.path.isfile(os.path.join(lib_dir, name)) for name in FRONTPANEL_FILENAMES
-    )
+def _is_macos():
+    return os.name != "nt" and sys.platform == "darwin"
 
 
-def _frontpanel_cache_is_partial(lib_dir: str = DEFAULT_LIB_DIR) -> bool:
-    existing_files = [
-        os.path.isfile(os.path.join(lib_dir, name)) for name in FRONTPANEL_FILENAMES
-    ]
-    return any(existing_files) and not all(existing_files)
+def frontpanel_filenames():
+    return MACOS_FRONTPANEL_FILENAMES if _is_macos() else WINDOWS_FRONTPANEL_FILENAMES
+
+
+FRONTPANEL_FILENAMES = frontpanel_filenames()
 
 
 def resolve_path(path: str) -> str:
     return os.path.abspath(os.path.expandvars(os.path.expanduser(path)))
 
 
+def selected_frontpanel_dir(frontpanel_dir=None):
+    directory = frontpanel_dir or os.environ.get(FRONTPANEL_DIR_ENV)
+    if not directory and not _is_macos():
+        directory = DEFAULT_FRONTPANEL_DIR
+    return resolve_path(directory) if directory else None
+
+
 def frontpanel_file_sources(frontpanel_dir: Optional[str] = None):
-    if frontpanel_dir is None:
-        frontpanel_dir = DEFAULT_FRONTPANEL_DIR
-    frontpanel_dir = resolve_path(frontpanel_dir)
+    directory = selected_frontpanel_dir(frontpanel_dir)
+    if not directory:
+        raise FileNotFoundError(
+            "Specify --frontpanel-dir or MMS_OK_FRONTPANEL_DIR to copy SDK files. "
+            "On macOS the recommended setup is the official ok wheel from API/Python."
+        )
+    if _is_macos():
+        # Accept either the SDK root or its API/Python directory.
+        python_dir = (
+            directory if os.path.isfile(os.path.join(directory, "ok.py"))
+            else os.path.join(directory, "API", "Python")
+        )
+        dylib_dirs = (python_dir, os.path.dirname(python_dir))
+        dylib = next(
+            (
+                os.path.join(d, "libokFrontPanel.2.dylib") for d in dylib_dirs
+                if os.path.isfile(os.path.join(d, "libokFrontPanel.2.dylib"))
+            ),
+            os.path.join(os.path.dirname(python_dir), "libokFrontPanel.2.dylib"),
+        )
+        return {
+            "ok.py": os.path.join(python_dir, "ok.py"),
+            "_ok.so": os.path.join(python_dir, "_ok.so"),
+            "libokFrontPanel.2.dylib": dylib,
+        }
     return {
-        "ok.py": os.path.join(frontpanel_dir, "API/Python/x64/ok.py"),
-        "_ok.pyd": os.path.join(frontpanel_dir, "API/Python/x64/_ok.pyd"),
-        "okFrontPanel.dll": os.path.join(
-            frontpanel_dir, "API/lib/x64/okFrontPanel.dll"
-        ),
+        "ok.py": os.path.join(directory, "API/Python/x64/ok.py"),
+        "_ok.pyd": os.path.join(directory, "API/Python/x64/_ok.pyd"),
+        "okFrontPanel.dll": os.path.join(directory, "API/lib/x64/okFrontPanel.dll"),
     }
 
 
-def _same_path(left: str, right: str) -> bool:
-    return os.path.normcase(resolve_path(left)) == os.path.normcase(
-        resolve_path(right)
+def _same_path(left, right):
+    return os.path.normcase(os.path.realpath(resolve_path(left))) == os.path.normcase(
+        os.path.realpath(resolve_path(right))
     )
 
 
-def _trusted_ok_paths(
-    lib_dir: str = DEFAULT_LIB_DIR,
-    frontpanel_dir: Optional[str] = None,
-):
-    if frontpanel_dir is None:
-        frontpanel_dir = DEFAULT_FRONTPANEL_DIR
-    paths = [
-        os.path.join(resolve_path(lib_dir), "ok.py"),
-        resolve_path(frontpanel_file_sources(frontpanel_dir)["ok.py"]),
-    ]
-    trusted = []
-    for path in paths:
-        if not any(_same_path(path, existing) for existing in trusted):
-            trusted.append(path)
-    return tuple(trusted)
-
-
-def _trusted_native_paths(
-    lib_dir: str = DEFAULT_LIB_DIR,
-    frontpanel_dir: Optional[str] = None,
-):
-    if frontpanel_dir is None:
-        frontpanel_dir = DEFAULT_FRONTPANEL_DIR
-    files = frontpanel_file_sources(frontpanel_dir)
-    paths = [
-        os.path.join(resolve_path(lib_dir), "_ok.pyd"),
-        resolve_path(files["_ok.pyd"]),
-    ]
-    trusted = []
-    for path in paths:
-        if not any(_same_path(path, existing) for existing in trusted):
-            trusted.append(path)
-    return tuple(trusted)
-
-
-def _trusted_ok_dirs(
-    lib_dir: str = DEFAULT_LIB_DIR,
-    frontpanel_dir: Optional[str] = None,
-):
-    if frontpanel_dir is None:
-        frontpanel_dir = DEFAULT_FRONTPANEL_DIR
-    return tuple(
-        os.path.dirname(path) for path in _trusted_ok_paths(lib_dir, frontpanel_dir)
-    )
-
-
-def _has_version_accessor(owner) -> bool:
-    if owner is None:
-        return False
-
-    get_version_string = getattr(owner, "GetAPIVersionString", None)
-    if callable(get_version_string):
-        return True
-
-    return all(
-        callable(getattr(owner, name, None))
-        for name in (
-            "GetAPIVersionMajor",
-            "GetAPIVersionMinor",
-            "GetAPIVersionMicro",
-        )
-    )
-
-
-def _frontpanel_symbols_error(ok_module) -> Optional[str]:
-    frontpanel_class = getattr(ok_module, "okCFrontPanel", None)
-    if frontpanel_class is None:
-        return "ok module is missing okCFrontPanel"
-
-    if not (
-        _has_version_accessor(ok_module) or _has_version_accessor(frontpanel_class)
-    ):
-        return "ok module is missing FrontPanel API version accessors"
-
-    return None
-
-
-def _ok_module_validation_error(
-    ok_module,
-    lib_dir: str = DEFAULT_LIB_DIR,
-    frontpanel_dir: Optional[str] = None,
-) -> Optional[str]:
-    if frontpanel_dir is None:
-        frontpanel_dir = DEFAULT_FRONTPANEL_DIR
-    module_file = getattr(ok_module, "__file__", None)
-    trusted_paths = _trusted_ok_paths(lib_dir, frontpanel_dir)
-    if module_file is None:
-        return "ok module has no __file__; expected one of: {}".format(
-            ", ".join(trusted_paths)
-        )
-
-    if not any(_same_path(module_file, path) for path in trusted_paths):
-        return "untrusted ok module path: {}; expected one of: {}".format(
-            resolve_path(module_file), ", ".join(trusted_paths)
-        )
-
-    return _frontpanel_symbols_error(ok_module)
-
-
-def _native_module_validation_error(
-    native_module,
-    lib_dir: str = DEFAULT_LIB_DIR,
-    frontpanel_dir: Optional[str] = None,
-) -> Optional[str]:
-    if frontpanel_dir is None:
-        frontpanel_dir = DEFAULT_FRONTPANEL_DIR
-    module_file = getattr(native_module, "__file__", None)
-    trusted_paths = _trusted_native_paths(lib_dir, frontpanel_dir)
-    if module_file is None:
-        return "_ok module has no __file__; expected one of: {}".format(
-            ", ".join(trusted_paths)
-        )
-
-    if not any(_same_path(module_file, path) for path in trusted_paths):
-        return "untrusted _ok module path: {}; expected one of: {}".format(
-            resolve_path(module_file), ", ".join(trusted_paths)
-        )
-
-    return None
-
-
-def _format_exception(exc: Exception) -> str:
-    return "{}: {}".format(type(exc).__name__, exc)
-
-
-def _drop_untrusted_loaded_frontpanel_modules(
-    lib_dir: str = DEFAULT_LIB_DIR,
-    frontpanel_dir: Optional[str] = None,
-) -> Optional[str]:
-    if frontpanel_dir is None:
-        frontpanel_dir = DEFAULT_FRONTPANEL_DIR
-    first_error = None
-
-    loaded_native = sys.modules.get("_ok")
-    if loaded_native is not None:
-        error = _native_module_validation_error(loaded_native, lib_dir, frontpanel_dir)
-        if error is not None:
-            sys.modules.pop("_ok", None)
-            sys.modules.pop("ok", None)
-            first_error = error
-
-    loaded_ok = sys.modules.get("ok")
-    if loaded_ok is not None:
-        error = _ok_module_validation_error(loaded_ok, lib_dir, frontpanel_dir)
-        if error is not None:
-            sys.modules.pop("ok", None)
-            if first_error is None:
-                first_error = error
-
-    return first_error
-
-
-def _frontpanel_dll_dir_for_import(
-    directory: str,
-    lib_dir: str = DEFAULT_LIB_DIR,
-    frontpanel_dir: Optional[str] = None,
-) -> str:
-    if frontpanel_dir is None:
-        frontpanel_dir = DEFAULT_FRONTPANEL_DIR
-    directory = resolve_path(directory)
-    lib_dir = resolve_path(lib_dir)
-    files = frontpanel_file_sources(frontpanel_dir)
-    sdk_python_dir = os.path.dirname(files["ok.py"])
-
-    if _same_path(directory, lib_dir):
-        return lib_dir
-    if _same_path(directory, sdk_python_dir):
-        return os.path.dirname(files["okFrontPanel.dll"])
-    return directory
-
-
-@contextmanager
-def _scoped_frontpanel_import_path(
-    directory: str,
-    lib_dir: str = DEFAULT_LIB_DIR,
-    frontpanel_dir: Optional[str] = None,
-):
-    if frontpanel_dir is None:
-        frontpanel_dir = DEFAULT_FRONTPANEL_DIR
-    original_path = list(sys.path)
-    directory = resolve_path(directory)
-    dll_dir = _frontpanel_dll_dir_for_import(directory, lib_dir, frontpanel_dir)
-    dll_cookie = None
-
-    try:
-        sys.path.insert(0, directory)
-        add_dll_directory = getattr(os, "add_dll_directory", None)
-        if add_dll_directory is not None and os.path.isdir(dll_dir):
-            dll_cookie = add_dll_directory(dll_dir)
-        yield
-    finally:
-        if dll_cookie is not None:
-            dll_cookie.close()
-        sys.path[:] = original_path
-
-
-def _import_ok_from_dir(
-    directory: str,
-    lib_dir: str = DEFAULT_LIB_DIR,
-    frontpanel_dir: Optional[str] = None,
-):
-    if frontpanel_dir is None:
-        frontpanel_dir = DEFAULT_FRONTPANEL_DIR
-    with _scoped_frontpanel_import_path(directory, lib_dir, frontpanel_dir):
-        _drop_untrusted_loaded_frontpanel_modules(lib_dir, frontpanel_dir)
-        ok_module = importlib.import_module("ok")
-    error = _ok_module_validation_error(ok_module, lib_dir, frontpanel_dir)
-    if error is not None:
-        sys.modules.pop("ok", None)
-        raise ImportError(error)
-    return ok_module
-
-
-def frontpanel_cache_status(lib_dir: str = DEFAULT_LIB_DIR):
-    lib_dir = resolve_path(lib_dir)
+def frontpanel_cache_status(lib_dir=None):
+    lib_dir = resolve_path(lib_dir or DEFAULT_LIB_DIR)
     files = {
         name: {
             "path": os.path.join(lib_dir, name),
             "exists": os.path.isfile(os.path.join(lib_dir, name)),
         }
-        for name in FRONTPANEL_FILENAMES
+        for name in frontpanel_filenames()
     }
-    existing_count = sum(1 for info in files.values() if info["exists"])
+    count = sum(info["exists"] for info in files.values())
     return {
-        "path": lib_dir,
-        "files": files,
-        "complete": existing_count == len(FRONTPANEL_FILENAMES),
-        "partial": 0 < existing_count < len(FRONTPANEL_FILENAMES),
-        "missing": existing_count == 0,
+        "path": lib_dir, "files": files, "complete": count == len(files),
+        "partial": 0 < count < len(files), "missing": count == 0,
     }
+
+
+def _frontpanel_files_exist(lib_dir=None):
+    return frontpanel_cache_status(lib_dir)["complete"]
+
+
+def _frontpanel_cache_is_partial(lib_dir=None):
+    return frontpanel_cache_status(lib_dir)["partial"]
+
+
+def _has_version_accessor(owner):
+    return owner is not None and (
+        callable(getattr(owner, "GetAPIVersionString", None)) or all(
+            callable(getattr(owner, name, None)) for name in
+            ("GetAPIVersionMajor", "GetAPIVersionMinor", "GetAPIVersionMicro")
+        )
+    )
+
+
+def _frontpanel_symbols_error(module):
+    if not hasattr(module, "okCFrontPanel"):
+        return "ok module is missing okCFrontPanel"
+    if not (_has_version_accessor(module) or _has_version_accessor(module.okCFrontPanel)):
+        return "ok module is missing FrontPanel API version accessors"
+    return None
+
+
+def _wheel_candidate():
+    """Locate the installed distribution's recorded files, never a sys.path hit."""
+    if metadata is None:
+        return None
+    try:
+        dist = metadata.distribution("ok")
+    except metadata.PackageNotFoundError:
+        return None
+    files = {
+        str(f).replace("\\", "/"): str(dist.locate_file(f))
+        for f in (dist.files or ())
+    }
+    ok_path = files.get("ok/__init__.py")
+    binding_path = files.get("ok/ok.py")
+    natives = [
+        path for name, path in files.items()
+        if name.startswith("ok/_ok") and name.endswith(".so")
+    ]
+    if not ok_path or not binding_path or len(natives) != 1:
+        return None
+    return {
+        "kind": "wheel", "ok_path": ok_path, "binding_path": binding_path,
+        "native_path": natives[0],
+        "directory": os.path.dirname(os.path.dirname(ok_path)),
+        "files": [ok_path, binding_path, natives[0]], "version": dist.version,
+    }
+
+
+def _file_candidate(kind, files):
+    return {
+        "kind": kind, "ok_path": files["ok.py"],
+        "native_path": files["_ok.so" if _is_macos() else "_ok.pyd"],
+        "directory": os.path.dirname(files["ok.py"]), "files": list(files.values()),
+        "dll_dir": os.path.dirname(files.get("okFrontPanel.dll", files["ok.py"])),
+    }
+
+
+def _candidates(lib_dir, frontpanel_dir):
+    cache = _file_candidate(
+        "cache", {n: os.path.join(lib_dir, n) for n in frontpanel_filenames()}
+    )
+    sdk_dir = selected_frontpanel_dir(frontpanel_dir)
+    sdk = _file_candidate("sdk", frontpanel_file_sources(sdk_dir)) if sdk_dir else None
+    if _is_macos():
+        return [c for c in (sdk, _wheel_candidate(), cache) if c is not None]
+    return [c for c in (cache, sdk) if c is not None]
+
+
+def _clear_frontpanel_modules():
+    global _ok_module
+    _ok_module = None
+    for name in list(sys.modules):
+        if name in ("ok", "_ok") or name.startswith("ok."):
+            sys.modules.pop(name, None)
+
+
+def _module_path_error(module, expected, name):
+    path = getattr(module, "__file__", None)
+    if not path or not _same_path(path, expected):
+        return "untrusted {} module path: {}; expected {}".format(name, path, expected)
+    return None
+
+
+def _candidate_module_error(module, candidate):
+    error = _module_path_error(
+        module, candidate["ok_path"], "ok"
+    ) or _frontpanel_symbols_error(module)
+    if error:
+        return error
+    if candidate["kind"] == "wheel":
+        binding = sys.modules.get("ok.ok")
+        if binding is None:
+            return "official ok wheel is missing its ok.ok binding module"
+        error = _module_path_error(binding, candidate["binding_path"], "ok.ok")
+        if error:
+            return error
+    for name in ("_ok", "ok._ok"):
+        native = sys.modules.get(name)
+        if native is not None:
+            error = _module_path_error(native, candidate["native_path"], name)
+            if error:
+                return error
+    return None
+
+
+@contextmanager
+def _scoped_frontpanel_import_path(directory, dll_dir=None):
+    original_path = list(sys.path)
+    cookie = None
+    try:
+        sys.path.insert(0, resolve_path(directory))
+        add_dll_directory = getattr(os, "add_dll_directory", None)
+        if (
+            os.name == "nt" and add_dll_directory is not None
+            and dll_dir and os.path.isdir(dll_dir)
+        ):
+            cookie = add_dll_directory(dll_dir)
+        yield
+    finally:
+        if cookie is not None:
+            cookie.close()
+        sys.path[:] = original_path
+
+
+def _python_environment_error(candidate):
+    # The macOS SDK and wheel use the CPython 3.11 stable ABI.
+    version = candidate.get("version", "")
+    if _is_macos() or version.startswith("6.1."):
+        if sys.version_info < (3, 11):
+            return "FrontPanel 6.1 requires Python 3.11 or newer (running {})".format(
+                sys.version.split()[0]
+            )
+    return None
+
+
+def _load_candidate(candidate):
+    environment_error = _python_environment_error(candidate)
+    if environment_error:
+        raise ImportError(environment_error)
+    missing = [f for f in candidate["files"] if not os.path.isfile(f)]
+    if missing:
+        raise ImportError("Missing FrontPanel file(s): " + ", ".join(missing))
+    loaded = sys.modules.get("ok")
+    if loaded is not None and _candidate_module_error(loaded, candidate) is None:
+        return loaded
+    _clear_frontpanel_modules()
+    try:
+        # Loading the exact file prevents an unrelated ok.py or package from
+        # winning module resolution. Only the SDK's native import needs sys.path.
+        is_package = candidate["kind"] == "wheel"
+        spec = importlib.util.spec_from_file_location(
+            "ok", candidate["ok_path"],
+            submodule_search_locations=(
+                [os.path.dirname(candidate["ok_path"])] if is_package else None
+            ),
+        )
+        module = importlib.util.module_from_spec(spec)
+        sys.modules["ok"] = module
+        with _scoped_frontpanel_import_path(candidate["directory"], candidate.get("dll_dir")):
+            spec.loader.exec_module(module)
+        error = _candidate_module_error(module, candidate)
+        if error:
+            raise ImportError(error)
+        version = get_frontpanel_version(module)
+        if sys.version_info < (3, 11) and version.startswith("6.1."):
+            raise ImportError("FrontPanel 6.1 requires Python 3.11 or newer")
+        return module
+    except BaseException:
+        _clear_frontpanel_modules()
+        raise
 
 
 def python_bitness() -> int:
     return calcsize("P") * 8
 
 
-def probe_frontpanel_import(lib_dir: str = DEFAULT_LIB_DIR):
-    """Probe ok/_ok imports without copying or refreshing FrontPanel files."""
-    lib_dir = resolve_path(lib_dir)
+def _format_exception(exc):
+    return "{}: {}".format(type(exc).__name__, exc)
+
+
+def probe_frontpanel_import(lib_dir=None, frontpanel_dir=None):
+    """Inspect SDK/wheel/cache imports without copying or refreshing files."""
+    lib_dir = resolve_path(lib_dir or DEFAULT_LIB_DIR)
     result = {
-        "ok_module": None,
-        "ok_imported": False,
-        "_ok_imported": False,
-        "ok_error": None,
-        "_ok_error": None,
-        "used_cache_path": False,
+        "ok_module": None, "ok_imported": False, "_ok_imported": False,
+        "ok_error": None, "_ok_error": None, "used_cache_path": False,
+        "source": None, "ok_path": None, "native_path": None, "attempts": [],
     }
-
-    loaded_error = _drop_untrusted_loaded_frontpanel_modules(lib_dir)
-    loaded_ok = sys.modules.get("ok")
-    if loaded_ok is not None:
-        error = _ok_module_validation_error(loaded_ok, lib_dir)
-        if error is None:
-            result["ok_module"] = loaded_ok
-            result["ok_imported"] = True
-        else:
-            sys.modules.pop("ok", None)
-            result["ok_error"] = error
-    elif loaded_error is not None:
-        result["ok_error"] = loaded_error
-
-    if not result["ok_imported"] and _frontpanel_files_exist(lib_dir):
-        result["used_cache_path"] = True
+    candidates = _candidates(lib_dir, frontpanel_dir)
+    loaded = sys.modules.get("ok")
+    if loaded is not None and not any(
+        _candidate_module_error(loaded, c) is None for c in candidates
+    ):
+        result["attempts"].append(
+            "untrusted ok module path: {}".format(getattr(loaded, "__file__", None))
+        )
+        _clear_frontpanel_modules()
+    for candidate in candidates:
         try:
-            result["ok_module"] = _import_ok_from_dir(lib_dir, lib_dir=lib_dir)
-            result["ok_imported"] = True
-            result["ok_error"] = None
+            module = _load_candidate(candidate)
         except Exception as exc:
-            if result["ok_error"] is None:
-                result["ok_error"] = _format_exception(exc)
-
+            result["attempts"].append("{}: {}".format(candidate["kind"], _format_exception(exc)))
+            continue
+        result.update(
+            ok_module=module, ok_imported=True, source=candidate["kind"],
+            used_cache_path=candidate["kind"] == "cache", ok_path=module.__file__,
+        )
+        name = "ok._ok" if candidate["kind"] == "wheel" else "_ok"
+        try:
+            with _scoped_frontpanel_import_path(candidate["directory"], candidate.get("dll_dir")):
+                native = importlib.import_module(name)
+            error = _module_path_error(native, candidate["native_path"], name)
+            if error:
+                raise ImportError(error)
+            result.update(_ok_imported=True, native_path=native.__file__)
+        except Exception as exc:
+            result["_ok_error"] = _format_exception(exc)
+        break
     if not result["ok_imported"]:
-        for directory in _trusted_ok_dirs(lib_dir):
-            ok_path = os.path.join(directory, "ok.py")
-            if _same_path(directory, lib_dir) or not os.path.isfile(ok_path):
-                continue
-            try:
-                result["ok_module"] = _import_ok_from_dir(directory, lib_dir=lib_dir)
-                result["ok_imported"] = True
-                result["ok_error"] = None
-                break
-            except Exception as exc:
-                if result["ok_error"] is None:
-                    result["ok_error"] = _format_exception(exc)
-
-    if not result["ok_imported"] and result["ok_error"] is None:
-        result["ok_error"] = "trusted FrontPanel ok.py was not found"
-
-    trusted_native_dirs = (
-        os.path.dirname(path)
-        for path in _trusted_native_paths(lib_dir)
-        if os.path.isfile(path)
-    )
-    for directory in trusted_native_dirs:
-        try:
-            with _scoped_frontpanel_import_path(directory, lib_dir=lib_dir):
-                _drop_untrusted_loaded_frontpanel_modules(lib_dir)
-                importlib.import_module("_ok")
-            result["_ok_imported"] = True
-            result["_ok_error"] = None
-            break
-        except Exception as exc:
-            if result["_ok_error"] is None:
-                result["_ok_error"] = _format_exception(exc)
-
-    if not result["_ok_imported"] and result["_ok_error"] is None:
-        result["_ok_error"] = "trusted FrontPanel _ok.pyd was not found"
-
+        result["ok_error"] = "; ".join(result["attempts"]) or "trusted FrontPanel ok module was not found"
+        result["_ok_error"] = result["ok_error"]
     return result
 
 
-def copy_frontpanel_files(
-    frontpanel_dir: str = DEFAULT_FRONTPANEL_DIR,
-    lib_dir: str = DEFAULT_LIB_DIR,
-    overwrite: bool = False,
-    raise_errors: bool = False,
-):
-    if os.name != "nt":
-        logger.info("OS is not Windows!")
+def copy_frontpanel_files(frontpanel_dir=None, lib_dir=None, overwrite=False, raise_errors=False):
+    if os.name != "nt" and not _is_macos():
+        logger.info("FrontPanel setup supports Windows and macOS")
         return None
-
-    frontpanel_dir = resolve_path(frontpanel_dir)
-    lib_dir = resolve_path(lib_dir)
-
-    if not os.path.exists(frontpanel_dir):
-        logger.warning("FrontPanel SDK not found!")
-        logger.warning(f"Default Directory: {frontpanel_dir}")
-        return None
-
-    os.makedirs(lib_dir, exist_ok=True)
-
+    lib_dir = resolve_path(lib_dir or DEFAULT_LIB_DIR)
     try:
-        refresh_cache = overwrite or _frontpanel_cache_is_partial(lib_dir)
         files = frontpanel_file_sources(frontpanel_dir)
-
+        # Check every source before changing the cache, including the dylib.
+        for source in files.values():
+            if not os.path.isfile(source):
+                raise FileNotFoundError(source)
+        os.makedirs(lib_dir, exist_ok=True)
+        refresh = overwrite or _frontpanel_cache_is_partial(lib_dir)
         for filename, source in files.items():
             destination = os.path.join(lib_dir, filename)
-            if os.path.exists(destination) and not refresh_cache:
-                logger.info(f"Using existing FrontPanel file: {destination}")
+            if os.path.isfile(destination) and (not refresh or _same_path(source, destination)):
                 continue
-            shutil.copy(src=source, dst=destination)
-
+            shutil.copy(source, destination)
         return lib_dir
-    except FileNotFoundError:
+    except (FileNotFoundError, PermissionError) as exc:
         if raise_errors:
             raise
-        logger.warning("FrontPanel SDK files not found!")
-        logger.warning(f"Default Directory: {frontpanel_dir}")
+        logger.warning("FrontPanel SDK file copy failed: {}", exc)
         return None
-    except PermissionError as exc:
-        if raise_errors:
-            raise
-        logger.warning(f"FrontPanel SDK file copy failed: {exc}")
-        logger.warning(
-            "Close other Python/Jupyter processes using FrontPanel, or restart their kernels."
+
+
+def reset_frontpanel_cache(frontpanel_dir=None, lib_dir=None):
+    return copy_frontpanel_files(frontpanel_dir, lib_dir, overwrite=True, raise_errors=True)
+
+
+def import_ok(frontpanel_dir=None, lib_dir=None):
+    lib_dir = resolve_path(lib_dir or DEFAULT_LIB_DIR)
+    # Windows keeps its historical automatic SDK-to-cache installation behavior.
+    if not _is_macos() and not _frontpanel_files_exist(lib_dir):
+        copy_frontpanel_files(frontpanel_dir=frontpanel_dir, lib_dir=lib_dir, overwrite=True)
+    probe = probe_frontpanel_import(lib_dir, frontpanel_dir)
+    if not probe["ok_imported"] and not _is_macos():
+        copied = copy_frontpanel_files(frontpanel_dir=frontpanel_dir, lib_dir=lib_dir, overwrite=True)
+        if copied:
+            probe = probe_frontpanel_import(lib_dir, frontpanel_dir)
+    if probe["ok_imported"]:
+        return probe["ok_module"]
+    raise ImportError(
+        "Import ok failed: {}. Use `mms_ok doctor` for setup details.".format(
+            probe["ok_error"]
         )
-        return None
-
-
-def reset_frontpanel_cache(
-    frontpanel_dir: str = DEFAULT_FRONTPANEL_DIR,
-    lib_dir: str = DEFAULT_LIB_DIR,
-):
-    return copy_frontpanel_files(
-        frontpanel_dir=frontpanel_dir,
-        lib_dir=lib_dir,
-        overwrite=True,
-        raise_errors=True,
     )
-
-
-def import_ok():
-    loaded_error = _drop_untrusted_loaded_frontpanel_modules(DEFAULT_LIB_DIR)
-    loaded_ok = sys.modules.get("ok")
-    if loaded_ok is not None:
-        error = _ok_module_validation_error(loaded_ok, DEFAULT_LIB_DIR)
-        if error is None:
-            return loaded_ok
-        sys.modules.pop("ok", None)
-    elif loaded_error is not None:
-        logger.warning(loaded_error)
-
-    if _frontpanel_files_exist(DEFAULT_LIB_DIR):
-        try:
-            return _import_ok_from_dir(DEFAULT_LIB_DIR, lib_dir=DEFAULT_LIB_DIR)
-        except Exception:
-            logger.warning(
-                "Existing FrontPanel files could not be imported; refreshing cache."
-            )
-
-    copied_dir = copy_frontpanel_files(lib_dir=DEFAULT_LIB_DIR, overwrite=True)
-    if copied_dir:
-        try:
-            return _import_ok_from_dir(copied_dir, lib_dir=DEFAULT_LIB_DIR)
-        except Exception:
-            pass
-
-    for directory in _trusted_ok_dirs(DEFAULT_LIB_DIR):
-        ok_path = os.path.join(directory, "ok.py")
-        if _same_path(directory, DEFAULT_LIB_DIR) or not os.path.isfile(ok_path):
-            continue
-        try:
-            return _import_ok_from_dir(directory, lib_dir=DEFAULT_LIB_DIR)
-        except Exception:
-            pass
-
-    log_critical("Please manually setup FrontPanel SDK!")
-    raise ImportError("Import ok failed")
 
 
 def get_ok():
     global _ok_module
-
     if _ok_module is None:
         _ok_module = import_ok()
-
     return _ok_module
 
 
 def get_frontpanel_version(ok_module=None) -> str:
     ok = ok_module or get_ok()
-
     for owner in (ok, getattr(ok, "okCFrontPanel", None)):
         if owner is None:
             continue
-
-        get_version_string = getattr(owner, "GetAPIVersionString", None)
-        if get_version_string is not None:
+        get_string = getattr(owner, "GetAPIVersionString", None)
+        if callable(get_string):
             try:
-                version = get_version_string()
+                version = get_string()
                 return version.decode() if isinstance(version, bytes) else str(version)
             except Exception:
                 pass
-
-    try:
-        return "{}.{}.{}".format(
-            ok.GetAPIVersionMajor(),
-            ok.GetAPIVersionMinor(),
-            ok.GetAPIVersionMicro(),
-        )
-    except Exception:
-        return "unknown"
+        try:
+            return "{}.{}.{}".format(
+                owner.GetAPIVersionMajor(), owner.GetAPIVersionMinor(),
+                owner.GetAPIVersionMicro(),
+            )
+        except Exception:
+            pass
+    return "unknown"

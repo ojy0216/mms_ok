@@ -33,17 +33,17 @@ def _assert_platform_gate_failure(result: subprocess.CompletedProcess[str]) -> N
     assert "CRITICAL" in result.stderr
     assert "\033[" not in result.stderr
     assert "mms_ok" in result.stderr
-    assert "Windows-only" in result.stderr
+    assert "Windows and macOS" in result.stderr
     assert "unsupported platform" in result.stderr
 
 
-def test_non_windows_package_import_fails_fast() -> None:
+def test_unsupported_package_import_fails_fast() -> None:
     result = _run_python_as_non_windows("import mms_ok")
 
     _assert_platform_gate_failure(result)
 
 
-def test_non_windows_module_execution_fails_before_menu() -> None:
+def test_unsupported_module_execution_fails_before_menu() -> None:
     result = _run_python_as_non_windows(
         "import runpy\n"
         "runpy.run_module('mms_ok', run_name='__main__', alter_sys=True)"
@@ -219,3 +219,38 @@ def test_console_script_mapping_remains_package_cli_main() -> None:
 
     assert 'mms_ok = "mms_ok.cli:main"' in pyproject
     assert '"colorama"' not in pyproject
+
+
+def test_linux_is_rejected_by_the_real_platform_gate() -> None:
+    result = _run_python(
+        "import os, sys\n"
+        "from loguru import logger\n"
+        "os.environ.pop('MMS_OK_UNSUPPORTED_PLATFORM_SIGNAL', None)\n"
+        "os.name = 'posix'\n"
+        "sys.platform = 'linux'\n"
+        "import mms_ok\n"
+    )
+    _assert_platform_gate_failure(result)
+
+
+def test_macos_import_public_api_and_cli_help_are_sdk_lazy() -> None:
+    result = _run_python(
+        "import os, sys\n"
+        "from loguru import logger\n"
+        "import numpy\n"
+        "class BlockSDK:\n"
+        "    def find_spec(self, fullname, path=None, target=None):\n"
+        "        if fullname in {'ok', '_ok'} or fullname.startswith('ok.'):\n"
+        "            raise AssertionError('SDK imported during help: ' + fullname)\n"
+        "os.environ.pop('MMS_OK_UNSUPPORTED_PLATFORM_SIGNAL', None)\n"
+        "sys.meta_path.insert(0, BlockSDK())\n"
+        "os.name = 'posix'\n"
+        "sys.platform = 'darwin'\n"
+        "import mms_ok\n"
+        "from mms_ok import BIST, XEM, XEM7310, XEM7360\n"
+        "from mms_ok.cli import main\n"
+        "main(['--help'])\n"
+    )
+    assert result.returncode == 0, result.stderr
+    assert 'setup-frontpanel' in result.stdout
+    assert 'doctor' in result.stdout

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import platform
 from datetime import datetime
 from typing import Iterable, Tuple
 
@@ -59,6 +60,13 @@ def _version_label(version: str) -> str:
 
 
 def _header_panel(version: str, frontpanel_version: str) -> Table:
+    os_name = platform.system()
+    if os_name == "Darwin":
+        os_name = "macOS"
+        os_version = platform.mac_ver()[0] or platform.release()
+    else:
+        os_version = platform.version()
+
     header = Table.grid(expand=True, padding=(0, 4))
     header.add_column(no_wrap=True)
     header.add_column(ratio=1, justify="left")
@@ -66,8 +74,11 @@ def _header_panel(version: str, frontpanel_version: str) -> Table:
     version_table = Table.grid(padding=(0, 2))
     version_table.add_column(style="dim", no_wrap=True, justify="left")
     version_table.add_column(no_wrap=True, justify="left")
-    for _ in range(6):
+    for _ in range(5):
         version_table.add_row("", "")
+    version_table.add_row(
+        Text(f"OS: {os_name} {os_version} ({platform.machine()})", style="dim")
+    )
     version_table.add_row(
         Text(
             f"{_version_label(version)} (FrontPanel {_version_label(frontpanel_version)})",

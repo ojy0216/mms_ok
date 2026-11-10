@@ -26,6 +26,8 @@ from .ok_setup import (
     import_ok,
     reset_frontpanel_cache,
     resolve_path,
+    selected_frontpanel_dir,
+    _is_macos,
 )
 
 
@@ -55,19 +57,30 @@ KEY_QUIT = "quit"
 KEY_UNKNOWN = "unknown"
 
 
-def _run_bist(_args) -> int:
+def _run_bist(args) -> int:
     from . import BIST
+    from .fpga_factory import FPGASelectionError
 
-    return 0 if BIST().run_test() else EXIT_BIST_FAILED
+    try:
+        test = BIST(serial=args.serial) if args.serial is not None else BIST()
+        return 0 if test.run_test() else EXIT_BIST_FAILED
+    except (
+        FPGASelectionError, FrontPanelUnavailableError, DeviceDiscoveryError,
+        ImportError, ConnectionError, RuntimeError, ValueError, OSError,
+    ) as exc:
+        print("BIST failed: {}".format(exc))
+        return EXIT_BIST_FAILED
 
 
-def _setup_frontpanel(_args) -> int:
-    cache = frontpanel_cache_status(DEFAULT_LIB_DIR)
+def _setup_frontpanel(args) -> int:
+    cache = frontpanel_cache_status(args.lib_dir)
     if cache["complete"]:
         print(f"FrontPanel files already set up at: {cache['path']}")
         return 0
 
-    target_dir = copy_frontpanel_files()
+    target_dir = copy_frontpanel_files(
+        frontpanel_dir=args.frontpanel_dir, lib_dir=args.lib_dir
+    )
     message = (
         f"FrontPanel files copied to: {target_dir}"
         if target_dir
@@ -85,12 +98,13 @@ def _show_version(_args) -> int:
 def _check_sdk(_args) -> int:
     try:
         ok = import_ok()
-    except ImportError:
-        print("FrontPanel SDK is not available.")
+    except ImportError as exc:
+        print("FrontPanel SDK is not available: {}".format(exc))
         return 1
 
     print(f"FrontPanel SDK is available.")
     print(f"FrontPanel SDK version: {get_frontpanel_version(ok)}")
+    print("FrontPanel load path: {}".format(ok.__file__))
     return 0
 
 
@@ -134,7 +148,7 @@ def _run_doctor(args) -> int:
 
 
 def _reset_cache(args) -> int:
-    frontpanel_dir = resolve_path(args.frontpanel_dir)
+    frontpanel_dir = selected_frontpanel_dir(args.frontpanel_dir)
     lib_dir = resolve_path(args.lib_dir)
     console = Console()
 
@@ -145,7 +159,7 @@ def _reset_cache(args) -> int:
         )
     except PermissionError as exc:
         console.print("FrontPanel cache refresh failed: {}".format(exc))
-        console.print(LOCK_GUIDANCE)
+        console.print(LOCK_GUIDANCE.replace("ok/_ok.pyd", "ok/_ok.so") if _is_macos() else LOCK_GUIDANCE)
         return 1
     except FileNotFoundError as exc:
         console.print("FrontPanel SDK files were not found: {}".format(exc))
@@ -171,6 +185,10 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command")
 
     bist_parser = subparsers.add_parser("bist", help="Run the built-in self-test")
+    bist_parser.add_argument(
+        "--serial",
+        help="Serial number of the board to test (required when multiple boards are connected)",
+    )
     bist_parser.set_defaults(handler=_run_bist)
 
     version_parser = subparsers.add_parser("version", help="Show package version")
@@ -193,6 +211,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Copy FrontPanel Python files into the default local directory",
     )
     setup_parser.set_defaults(handler=_setup_frontpanel)
+    setup_parser.add_argument(
+        "--frontpanel-dir", default=None,
+        help="SDK directory (or MMS_OK_FRONTPANEL_DIR)",
+    )
+    setup_parser.add_argument(
+        "--lib-dir", default=DEFAULT_LIB_DIR,
+        help="Local FrontPanel cache directory",
+    )
 
     doctor_parser = subparsers.add_parser(
         "doctor",
@@ -200,7 +226,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     doctor_parser.add_argument(
         "--frontpanel-dir",
-        default=DEFAULT_FRONTPANEL_DIR,
+        default=None,
         help="FrontPanel SDK directory to inspect",
     )
     doctor_parser.add_argument(
@@ -216,7 +242,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     reset_cache_parser.add_argument(
         "--frontpanel-dir",
-        default=DEFAULT_FRONTPANEL_DIR,
+        default=None,
         help="FrontPanel SDK directory to copy from",
     )
     reset_cache_parser.add_argument(
@@ -250,15 +276,19 @@ def _read_menu_key() -> str:
         settings = termios.tcgetattr(fd)
         try:
             tty.setraw(fd)
-            key = sys.stdin.read(1)
+            # Avoid TextIO read-ahead hiding escape bytes from select().
+            key = os.read(fd, 1).decode("utf-8", errors="replace")
             if key == "\x1b":
-                ready, _, _ = select.select([sys.stdin], [], [], 0.05)
-                if ready:
-                    sequence = sys.stdin.read(2)
-                    if sequence == "[A":
-                        return KEY_UP
-                    if sequence == "[B":
-                        return KEY_DOWN
+                sequence = b""
+                for _ in range(2):
+                    ready, _, _ = select.select([fd], [], [], 0.05)
+                    if not ready:
+                        break
+                    sequence += os.read(fd, 1)
+                if sequence == b"[A":
+                    return KEY_UP
+                if sequence == b"[B":
+                    return KEY_DOWN
                 return KEY_QUIT
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, settings)

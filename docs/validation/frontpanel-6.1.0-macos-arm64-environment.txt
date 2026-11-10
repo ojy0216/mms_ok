@@ -1,0 +1,23 @@
+{
+  "checked_at": "2026-11-10T12:56:50.613529+09:00",
+  "python": "3.13.18 (main, Oct 25 2026, 18:31:23) [Clang 21.0.0 (clang-2100.3.34.2)]",
+  "executable": "/Users/jy/dev/mms_ok/.venv/bin/python",
+  "macos": "27.0.1",
+  "machine": "arm64",
+  "frontpanel": "6.1.0",
+  "ok_path": "/Users/jy/dev/mms_ok/.venv/lib/python3.13/site-packages/ok/__init__.py",
+  "native_path": "/Users/jy/dev/mms_ok/.venv/lib/python3.13/site-packages/ok/_ok.abi3.so",
+  "dependencies": {
+    "mms_ok": "2.3.0",
+    "ok": "6.1.0",
+    "numpy": "2.5.4",
+    "bitslice": "0.3.0",
+    "loguru": "0.7.3",
+    "rich": "15.0.0",
+    "tqdm": "4.70.1",
+    "pytest": "9.2.0"
+  },
+  "bitstream_sha256": "f2381b26c330788b256ecd781d7d0ea38d0ca5a5df1c4ade20e9088cda54923c"
+}
+{"reopen_after_bist": "PASS", "serial": "224800128A", "model": "XEM7310-A200", "product_id": 44, "usb_speed": 2, "wire_width": 32, "pipe_width": 32, "trigger_width": 32}
+closed_after_reopen: True

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import platform
+import sys
 
 from rich.console import Console
 from rich.table import Table
@@ -14,7 +16,11 @@ from .ok_setup import (
     probe_frontpanel_import,
     python_bitness,
     resolve_path,
+    selected_frontpanel_dir,
+    _is_macos,
 )
+
+from ._frontpanel_compat import device_count as frontpanel_device_count
 
 
 STATUS_PASS = "[O]"
@@ -51,8 +57,7 @@ LVS_X_ART = r"""
 
 def _get_device_count(ok_module):
     try:
-        frontpanel = ok_module.okCFrontPanel()
-        return frontpanel.GetDeviceCount(), None
+        return frontpanel_device_count(ok_module), None
     except Exception as exc:
         return None, "{}: {}".format(type(exc).__name__, exc)
 
@@ -66,13 +71,15 @@ def _append_doctor_row(rows, status, check, result, details=""):
 
 
 def run_doctor(frontpanel_dir: str, lib_dir: str) -> int:
-    frontpanel_dir = resolve_path(frontpanel_dir)
+    frontpanel_dir = selected_frontpanel_dir(frontpanel_dir)
     lib_dir = resolve_path(lib_dir)
     cache = frontpanel_cache_status(lib_dir)
-    probe = probe_frontpanel_import(lib_dir)
+    probe = probe_frontpanel_import(lib_dir, frontpanel_dir=frontpanel_dir)
     ok_module = probe["ok_module"]
-    sdk_exists = os.path.isdir(frontpanel_dir)
-    pyd_present = cache["files"]["_ok.pyd"]["exists"]
+    sdk_exists = bool(frontpanel_dir and os.path.isdir(frontpanel_dir))
+    native_name = "_ok.so" if _is_macos() else "_ok.pyd"
+    native_info = cache["files"][native_name]
+    pyd_present = native_info["exists"]
 
     api_version = "unavailable"
     device_count = "unavailable"
@@ -103,10 +110,10 @@ def run_doctor(frontpanel_dir: str, lib_dir: str) -> int:
     rows = []
     _append_doctor_row(
         rows,
-        STATUS_PASS if sdk_exists else STATUS_FAIL,
+        STATUS_PASS if sdk_exists else STATUS_WARN if probe["ok_imported"] and probe["_ok_imported"] else STATUS_FAIL,
         "SDK path",
         "found" if sdk_exists else "missing",
-        frontpanel_dir,
+        frontpanel_dir or "Not specified; an installed official ok wheel is sufficient",
     )
     cache_status = STATUS_PASS
     if cache["partial"] or cache["missing"]:
@@ -120,13 +127,28 @@ def run_doctor(frontpanel_dir: str, lib_dir: str) -> int:
             "present" if info["exists"] else "missing",
             "{}: {}".format(filename, info["path"]),
         )
+    if _is_macos():
+        os_name = "macOS"
+        os_version = platform.mac_ver()[0] or platform.release()
+    else:
+        os_name = "Windows"
+        os_version = platform.version()
+    _append_doctor_row(
+        rows,
+        STATUS_PASS,
+        "Operating system",
+        os_name,
+        "{} ({})".format(os_version, platform.machine()),
+    )
+    _append_doctor_row(rows, STATUS_PASS, "Python runtime", platform.python_version(),
+                       "{} ({})".format(sys.executable, platform.machine()))
     bitness = python_bitness()
     _append_doctor_row(
         rows,
         STATUS_PASS if bitness == 64 else STATUS_FAIL,
         "Python bitness",
         "{}-bit".format(bitness),
-        "x64 FrontPanel files require 64-bit Python",
+        "Use 64-bit Python matching the SDK architecture (arm64/x86_64 on macOS)" if _is_macos() else "x64 FrontPanel files require 64-bit Python",
     )
     _append_doctor_row(
         rows,
@@ -137,34 +159,34 @@ def run_doctor(frontpanel_dir: str, lib_dir: str) -> int:
         else "present/import failed"
         if pyd_present
         else "not importable",
-        probe["_ok_error"] or cache["files"]["_ok.pyd"]["path"],
+        probe["_ok_error"] or probe.get("native_path") or native_info["path"],
     )
     _append_doctor_row(
         rows,
         STATUS_PASS if probe["ok_imported"] else STATUS_FAIL,
         "ok import",
         "imported" if probe["ok_imported"] else "failed",
-        probe["ok_error"] or ("used local cache" if probe["used_cache_path"] else ""),
+        probe["ok_error"] or probe.get("ok_path") or ("used local cache" if probe["used_cache_path"] else ""),
     )
     _append_doctor_row(
         rows,
         STATUS_PASS if ok_module is not None else STATUS_FAIL,
         "FrontPanel API",
         str(api_version),
-        "",
+        "Source: {}".format(probe.get("source") or "unknown"),
     )
     _append_doctor_row(
         rows,
         device_status,
         "Device count",
         str(device_count),
-        device_error or "queried via ok.okCFrontPanel",
+        device_error or "queried via FrontPanel compatibility layer",
     )
     for row in rows:
         _add_doctor_row(table, *row)
 
     guidance = []
-    if not sdk_exists:
+    if not sdk_exists and not probe["ok_imported"]:
         guidance.append(
             "FrontPanel SDK path is missing. Install the Opal Kelly FrontPanel SDK "
             "or pass --frontpanel-dir to the installed SDK path."
@@ -176,13 +198,18 @@ def run_doctor(frontpanel_dir: str, lib_dir: str) -> int:
         )
     if not probe["ok_imported"]:
         guidance.append(
-            "The ok module could not be imported. Use 64-bit Python with the x64 "
-            "FrontPanel files, refresh the cache, and ensure ok/_ok.pyd is not locked."
+            ("Install the official ok wheel from the SDK API/Python folder with Python 3.11+ and 64-bit Python. "
+             "For direct SDK loading, check _ok.so and libokFrontPanel.2.dylib and match arm64/x86_64."
+             if _is_macos() else
+             "The ok module could not be imported. Use 64-bit Python with the x64 "
+             "FrontPanel files, refresh the cache, and ensure ok/_ok.pyd is not locked.")
         )
     if pyd_present and not probe["_ok_imported"]:
         guidance.append(
-            "_ok.pyd exists but did not import directly. This usually indicates a DLL "
-            "load/path mismatch or a Python bitness mismatch."
+            ("_ok.so exists but did not import. Check Python 3.11+, architecture and libokFrontPanel.2.dylib. "
+             "The native load error is shown above." if _is_macos() else
+             "_ok.pyd exists but did not import directly. This usually indicates a DLL "
+             "load/path mismatch or a Python bitness mismatch.")
         )
     if probe["ok_imported"] and device_error is not None:
         guidance.append(
