@@ -276,15 +276,19 @@ def _read_menu_key() -> str:
         settings = termios.tcgetattr(fd)
         try:
             tty.setraw(fd)
-            key = sys.stdin.read(1)
+            # Avoid TextIO read-ahead hiding escape bytes from select().
+            key = os.read(fd, 1).decode("utf-8", errors="replace")
             if key == "\x1b":
-                ready, _, _ = select.select([sys.stdin], [], [], 0.05)
-                if ready:
-                    sequence = sys.stdin.read(2)
-                    if sequence == "[A":
-                        return KEY_UP
-                    if sequence == "[B":
-                        return KEY_DOWN
+                sequence = b""
+                for _ in range(2):
+                    ready, _, _ = select.select([fd], [], [], 0.05)
+                    if not ready:
+                        break
+                    sequence += os.read(fd, 1)
+                if sequence == b"[A":
+                    return KEY_UP
+                if sequence == b"[B":
+                    return KEY_DOWN
                 return KEY_QUIT
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, settings)
